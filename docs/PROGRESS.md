@@ -5,9 +5,12 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**Phase 4 — Semantic suite.** Phases 1-3 complete, 18/18 tests passing. Clock-join
-(`build_metric_context`) built and tested incl. known channel-offset correction.
-Next: `task_success` and `tool_call_ordering` deterministic metrics.
+**Phase 4 — Semantic suite.** Phases 1-3 complete + deterministic metrics done,
+27/27 tests passing. `task_success` (final-tool + result_contains check) and
+`tool_call_ordering` (subsequence order check + never_zero_appointments state
+reducer — catches the reschedule trap) both registered and tested against real
+fixtures. Next: `instruction_adherence` (deterministic rule + judge stub), then
+`faithfulness` (LLM judge).
 
 ---
 
@@ -39,12 +42,13 @@ Next: `task_success` and `tool_call_ordering` deterministic metrics.
 - [x] Test: optional `asr_confidence` absent → unchanged behavior (C1(6))
 
 ## Phase 4 — Semantic suite (deterministic before judge)
-- [ ] `metrics/semantic/task_success.py` — deterministic (final DB state vs expected)
-- [ ] `metrics/semantic/tool_call_ordering.py` — deterministic reducer + reschedule-trap invariant
-- [ ] Test: reschedule_trap mid-sequence failure → "never zero appointments" fires (intermediate state)
+- [x] `metrics/semantic/task_success.py` — deterministic (final DB state vs expected)
+- [x] `metrics/semantic/tool_call_ordering.py` — deterministic reducer + reschedule-trap invariant
+- [x] Test: reschedule_trap mid-sequence failure → "never zero appointments" fires (intermediate state)
 - [ ] `metrics/semantic/instruction_adherence.py` — deterministic rule (gate) + judge stub (advisory)
 - [ ] `metrics/semantic/faithfulness.py` — LLM judge (advisory; reads asr_confidence)
-- [ ] Test: task_success / ordering pass+fail cases; faithfulness judge structured-output shape
+- [x] Test: task_success / ordering pass+fail cases
+- [ ] Test: faithfulness judge structured-output shape
 
 ## Phase 5 — Acoustic suite (barge_in first — headline)
 - [ ] `metrics/acoustic/barge_in.py` — 2-ch VAD + markers → time-to-yield; fail-to-yield & false-yield
