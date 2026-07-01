@@ -12,47 +12,21 @@ threshold logic against synthetic segments; only one smoke test runs the real
 model against real fixture audio."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
-import numpy as np
-
+from eval_system.metrics.acoustic.vad import SpeechSegment, VadFn, silero_vad_segments
 from eval_system.metrics.base import BaseMetric, Gating, MetricKind, MetricScore, Status
 from eval_system.metrics.registry import register
 
 if TYPE_CHECKING:
     from eval_system.context.metric_context import MetricContext
 
-VAD_SAMPLE_RATE = 16000
 FAIL_TO_YIELD_THRESHOLD_SEC = 1.0
 MIN_GENUINE_SPEECH_DURATION_SEC = 0.3
 # VAD has real onset/offset latency (padding, silence-duration thresholds), so
 # a genuine overlap can land just outside a segment's boundary -- allow a
 # small grace window rather than requiring an exact/boundary match.
 OVERLAP_TOLERANCE_SEC = 0.2
-
-
-@dataclass
-class SpeechSegment:
-    t_start: float
-    t_end: float
-
-
-VadFn = Callable[[np.ndarray, int], list[SpeechSegment]]
-
-
-def _silero_vad(audio: np.ndarray, sr: int) -> list[SpeechSegment]:
-    import librosa
-    import torch
-    from silero_vad import get_speech_timestamps, load_silero_vad
-
-    resampled = librosa.resample(np.asarray(audio, dtype=np.float32), orig_sr=sr, target_sr=VAD_SAMPLE_RATE)
-    model = load_silero_vad()
-    timestamps = get_speech_timestamps(
-        torch.from_numpy(resampled), model, sampling_rate=VAD_SAMPLE_RATE,
-        return_seconds=True, time_resolution=3,
-    )
-    return [SpeechSegment(t["start"], t["end"]) for t in timestamps]
 
 
 def find_barge_ins(
@@ -101,7 +75,7 @@ class BargeInMetric(BaseMetric):
     requires_ground_truth = False
 
     def __init__(self, vad_fn: VadFn | None = None):
-        self.vad_fn = vad_fn or _silero_vad
+        self.vad_fn = vad_fn or silero_vad_segments
 
     def compute(self, ctx: "MetricContext") -> MetricScore:
         caller_segments = self.vad_fn(ctx.audio_caller, ctx.sr)

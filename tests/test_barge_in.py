@@ -4,11 +4,8 @@ import numpy as np
 
 from eval_system.context.fixture_loader import load_fixture
 from eval_system.context.metric_context import MetricContext, build_metric_context
-from eval_system.metrics.acoustic.barge_in import (
-    BargeInMetric,
-    SpeechSegment,
-    find_barge_ins,
-)
+from eval_system.metrics.acoustic.barge_in import BargeInMetric, find_barge_ins
+from eval_system.metrics.acoustic.vad import SpeechSegment
 from eval_system.metrics.base import Gating, MetricKind, Status
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
