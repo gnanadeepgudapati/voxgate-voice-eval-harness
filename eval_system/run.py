@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from eval_system.gating.gate import gate_advisory_breakdown
 from eval_system.metrics import registry
 from eval_system.metrics.base import MetricScore
 from eval_system.report.combine import Report, build_report, upsert_scores
+from eval_system.report.markdown_report import HEADLINE_METRIC, render_markdown_report
 
 # Import every metric module so its @register side effect populates REGISTRY --
 # a fresh interpreter running `python -m eval_system.run` otherwise sees an
@@ -31,10 +33,12 @@ from eval_system.metrics.semantic import (  # noqa: F401
 from eval_system.metrics.acoustic import (  # noqa: F401
     barge_in,
     double_talk,
+    emotion_appropriateness_mm,
     emotional_appropriateness,
     entity_intelligibility,
     latency_thresholds,
     pitch_prosody,
+    ser_emotion,
     turn_taking_latency,
 )
 
@@ -70,31 +74,46 @@ def write_report(report: Report, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for call_id, entry in report.per_call.items():
+        scores = entry["scores"]
+        headline_score = next((s for s in scores if s.metric == HEADLINE_METRIC), None)
         payload = {
             "call_id": call_id,
             "ship": entry["verdict"].ship,
             "failures": entry["verdict"].failures,
-            "scores": [_score_to_dict(s) for s in entry["scores"]],
+            "headline": _score_to_dict(headline_score) if headline_score is not None else None,
+            "emotion_disagreement_turns": entry["emotion_disagreement_turns"],
+            "scores": [_score_to_dict(s) for s in scores],
         }
         (out_dir / f"{call_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     (out_dir / "aggregate.json").write_text(json.dumps(report.aggregate, indent=2), encoding="utf-8")
-    (out_dir / "gate_advisory_breakdown.json").write_text(
-        json.dumps(gate_advisory_breakdown(registry.REGISTRY), indent=2), encoding="utf-8"
-    )
+
+    breakdown = gate_advisory_breakdown(registry.REGISTRY)
+    (out_dir / "gate_advisory_breakdown.json").write_text(json.dumps(breakdown, indent=2), encoding="utf-8")
+    (out_dir / "report.md").write_text(render_markdown_report(report, breakdown), encoding="utf-8")
 
 
-def main() -> None:
+def run_cli(argv: list[str] | None = None) -> int:
+    """Scores the fixture set and writes the report; returns the process exit
+    code (0 == ship, 1 == hold) so CI can gate on it (assessment.md Part 1
+    Q4: "a single ship / don't-ship decision for a CI pipeline")."""
     parser = argparse.ArgumentParser(description="Score a VoxGate fixture set")
     parser.add_argument("--fixtures", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--metrics", type=str, default=None, help="comma-separated metric names to run")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     metrics_filter = set(args.metrics.split(",")) if args.metrics else None
     report = score_fixture_set(args.fixtures, metrics_filter=metrics_filter)
     write_report(report, args.out)
     print(f"Scored {report.aggregate['total_calls']} call(s) -> {args.out}")
+    print(report.aggregate["ship_reason"])
+
+    return 0 if report.aggregate["ship"] else 1
+
+
+def main() -> None:
+    sys.exit(run_cli())
 
 
 if __name__ == "__main__":

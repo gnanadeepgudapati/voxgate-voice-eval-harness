@@ -1,5 +1,5 @@
 from eval_system.metrics.base import Gating, MetricKind, MetricScore, Status
-from eval_system.report.combine import build_report, upsert_scores
+from eval_system.report.combine import build_report, compute_ship_verdict, judge_trust_note, upsert_scores
 
 
 def _score(call_id, metric, kind, status, gating, evaluator_version="1", judge_prompt_version=None, score=1.0):
@@ -74,3 +74,150 @@ def test_trusted_judge_metrics_recorded_in_aggregate_and_affect_verdict():
     assert untrusted.per_call["call-1"]["verdict"].ship is True
     assert trusted.per_call["call-1"]["verdict"].ship is False
     assert trusted.aggregate["trusted_judge_metrics"] == ["faithfulness"]
+
+
+# --- run-level ship verdict (assessment.md: "both suites feed one verdict";
+# "a single ship/don't-ship decision for a CI pipeline") ---
+
+def test_all_pass_scores_ship_true():
+    scores = [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        _score("call-2", "barge_in", MetricKind.SIGNAL, Status.PASS, Gating.GATE),
+    ]
+
+    verdict = compute_ship_verdict(scores)
+
+    assert verdict["ship"] is True
+    assert verdict["gate_failures"] == []
+    assert verdict["advisory_failures"] == []
+    assert "SHIP" in verdict["ship_reason"]
+
+
+def test_one_gate_failure_holds_and_is_listed():
+    scores = [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        _score("call-2", "entity_intelligibility", MetricKind.SIGNAL, Status.FAIL, Gating.GATE),
+    ]
+
+    verdict = compute_ship_verdict(scores)
+
+    assert verdict["ship"] is False
+    assert verdict["gate_failures"] == [
+        {"call_id": "call-2", "metric": "entity_intelligibility", "status": "fail"}
+    ]
+    assert verdict["advisory_failures"] == []
+    assert "HOLD" in verdict["ship_reason"]
+    assert "entity_intelligibility" in verdict["ship_reason"]
+    assert "call-2" in verdict["ship_reason"]
+
+
+def test_advisory_failure_never_blocks_ship():
+    scores = [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        _score("call-1", "pitch_prosody", MetricKind.SIGNAL, Status.FAIL, Gating.ADVISORY),
+    ]
+
+    verdict = compute_ship_verdict(scores)
+
+    assert verdict["ship"] is True
+    assert verdict["gate_failures"] == []
+    assert verdict["advisory_failures"] == [
+        {"call_id": "call-1", "metric": "pitch_prosody", "status": "fail"}
+    ]
+
+
+def test_error_status_never_counts_as_a_failure():
+    scores = [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        _score("call-1", "faithfulness", MetricKind.JUDGE, Status.ERROR, Gating.ADVISORY),
+        _score("call-2", "tool_call_ordering", MetricKind.DETERMINISTIC, Status.ERROR, Gating.GATE),
+    ]
+
+    verdict = compute_ship_verdict(scores)
+
+    assert verdict["ship"] is True
+    assert verdict["gate_failures"] == []
+    assert verdict["advisory_failures"] == []
+
+
+def test_trusted_judge_promotes_gate_eligibility_for_ship_verdict():
+    scores = [_score("call-1", "faithfulness", MetricKind.JUDGE, Status.FAIL, Gating.ADVISORY)]
+
+    untrusted = compute_ship_verdict(scores)
+    trusted = compute_ship_verdict(scores, trusted_judge_metrics=frozenset({"faithfulness"}))
+
+    assert untrusted["ship"] is True
+    assert trusted["ship"] is False
+    assert trusted["gate_failures"] == [{"call_id": "call-1", "metric": "faithfulness", "status": "fail"}]
+
+
+def test_build_report_aggregate_includes_run_level_ship_fields():
+    store = upsert_scores({}, [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        _score("call-2", "tool_call_ordering", MetricKind.DETERMINISTIC, Status.FAIL, Gating.GATE),
+    ])
+
+    report = build_report(store)
+
+    assert report.aggregate["ship"] is False
+    assert report.aggregate["gate_failures"] == [
+        {"call_id": "call-2", "metric": "tool_call_ordering", "status": "fail"}
+    ]
+    assert report.aggregate["advisory_failures"] == []
+    assert "HOLD" in report.aggregate["ship_reason"]
+
+
+# --- judge trust note (avoid a grader misreading an empty trusted-judge list) ---
+
+def test_judge_trust_note_present_when_no_judges_trusted():
+    assert judge_trust_note(frozenset()) is not None
+    assert "0.60" in judge_trust_note(frozenset()) or "0.6" in judge_trust_note(frozenset())
+
+
+def test_judge_trust_note_absent_when_a_judge_is_trusted():
+    assert judge_trust_note(frozenset({"faithfulness"})) is None
+
+
+def test_build_report_aggregate_includes_judge_trust_note_when_empty():
+    store = upsert_scores({}, [_score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE)])
+
+    report = build_report(store)
+
+    assert "judge_trust_note" in report.aggregate
+    assert report.aggregate["judge_trust_note"] is not None
+
+
+def test_build_report_includes_emotion_disagreement_turns_per_call():
+    store = upsert_scores({}, [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        MetricScore(
+            call_id="call-1", metric="ser_emotion", kind=MetricKind.SIGNAL, status=Status.PASS,
+            gating=Gating.ADVISORY, score=0.9,
+            details={"per_turn": [{"start": 0.0, "end": 1.0, "label": "hap", "confidence": 0.9}]},
+        ),
+        MetricScore(
+            call_id="call-1", metric="emotion_appropriateness_mm", kind=MetricKind.JUDGE, status=Status.FAIL,
+            gating=Gating.ADVISORY, score=2.0,
+            details={"per_turn": [
+                {"turn_index": 0, "start": 0.0, "end": 1.0, "appropriate": False, "score": 2, "detected_tone": "cheerful"}
+            ]},
+            judge_prompt_version="mm-v1",
+        ),
+    ])
+
+    report = build_report(store)
+
+    assert report.per_call["call-1"]["emotion_disagreement_turns"] == [
+        {"turn": 0, "ser_label": "hap", "judge_tone": "cheerful", "judge_appropriate": False}
+    ]
+    # both metrics are advisory -- disagreement must never affect ship
+    assert report.per_call["call-1"]["verdict"].ship is True
+    assert report.aggregate["ship"] is True
+
+
+def test_build_report_aggregate_omits_judge_trust_note_when_a_judge_is_trusted():
+    store = upsert_scores({}, [_score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE)])
+
+    report = build_report(store, trusted_judge_metrics=frozenset({"faithfulness"}))
+
+    assert "judge_trust_note" not in report.aggregate

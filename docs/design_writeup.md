@@ -117,6 +117,43 @@ is:
   transcript, not the actual audio. That's a real gap between what it measures and what a
   human perceives, and it's exactly why "always advisory" is the right call rather than
   something calibration could ever promote.
+
+  **Attacking that gap directly, two complementary proxies, both permanently advisory:**
+  rather than trying to make one metric trustworthy, `ser_emotion.py` and
+  `emotion_appropriateness_mm.py` approach "was the tone appropriate?" from opposite ends and
+  use their *agreement* as the trust mechanism — directly answering Part 1 Q3's "evaluate
+  your own evaluators without a labeling budget."
+  - **`ser_emotion`** (signal) is an objective, offline speech-emotion classifier
+    (`superb/wav2vec2-base-superb-er`, the 4-class IEMOCAP model) run directly on the agent's
+    waveform per authored turn. It's reproducible and calibratable against labeled corpora
+    (RAVDESS/CREMA-D) since it's a real classifier, not a judge — but it's honestly
+    **context-blind**: it can tell you the agent sounded happy, never whether happy was the
+    *right* thing to sound like at that moment. It's hardcoded non-promotable for a sharper
+    reason than the usual "judges are noisy": even *human* labelers on the IEMOCAP corpus
+    these 4 classes come from only agree with each other at Fleiss' kappa ≈ 0.27–0.48. A
+    classifier can't be more trustworthy than the human agreement it was trained to approximate
+    — no calibration result should ever be allowed to promote it past that ceiling.
+  - **`emotion_appropriateness_mm`** (judge) answers the actual question, because it has what
+    `ser_emotion` doesn't: context. It sends real audio bytes plus the preceding transcript
+    turns to a multimodal model (Gemini 2.5 Flash) and asks whether the tone fit the moment —
+    fixing the original metric's "never hears the audio" weakness. It's still an LLM judge,
+    though, so it drifts and is noisy exactly like `faithfulness`/`instruction_adherence_judge`
+    — it stays advisory-only regardless of calibration, same hardcoded invariant as the
+    original `emotional_appropriateness`. Reproducibility for a CI metric matters here:
+    `temperature=0`, a pinned `judge_prompt_version`, and a response cache keyed by
+    `(call_id, turn_index, prompt_version, model)` mean a given fixture yields the *same*
+    judgment on every run rather than a fresh roll of the dice each time.
+  - **Agreement as the trust signal**: `report/combine.py`'s `compute_emotion_disagreement()`
+    buckets `ser_emotion`'s label into a coarse valence (happy→positive, neutral→neutral,
+    sad/angry→negative) and compares it, per matched turn, to the judge's `detected_tone` and
+    `appropriate` verdict. When an objective, context-blind classifier and a contextual,
+    LLM-based judge disagree about the same few seconds of audio — including the specific case
+    the assessment names, an upbeat-sounding turn the judge flags as inappropriate because it
+    came right after bad news — that disagreement is exactly the free signal Q3 asks for: no
+    labeled corpus needed, just two independent proxies that fail in different ways. This is
+    reporting-only (`emotion_disagreement_turns` in the per-call JSON, an "Emotion (advisory)"
+    section in `report.md`) and never touches the ship verdict, since both inputs to it are
+    permanently advisory metrics.
 - **Drift**: `calibration/drift.py` KS-tests a judge's current score distribution against a
   frozen golden-set baseline; a significant shift (model update, prompt change,
   provider-side regression) flags for re-calibration before the judge's trust tier is

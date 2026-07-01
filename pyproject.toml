@@ -27,10 +27,16 @@ acoustic = [
     # librosa's own numba floor is too old to build on Python 3.13+ (llvmlite
     # wheel for that numba version doesn't support it) -- force a modern one.
     "numba>=0.61",
+    # SER (ser_emotion.py): superb/wav2vec2-base-superb-er via transformers'
+    # audio-classification pipeline. torch already present (silero-vad pulls it in).
+    "transformers>=4.40",
 ]
 judge = [
     "anthropic>=0.40",
     "openai>=1.40",
+    # Multimodal emotion-appropriateness judge (emotion_appropriateness_mm.py) --
+    # the only judge here that hears real audio bytes, not a text description.
+    "google-genai>=0.3",
 ]
 stats = [
     "scipy>=1.11",
