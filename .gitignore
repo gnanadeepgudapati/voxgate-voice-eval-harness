@@ -17,6 +17,9 @@ build/
 # Claude Code local (per-machine) settings
 .claude/settings.local.json
 
+# Secrets -- API keys go here, never committed (see .env.example for the template)
+.env
+
 # OS / editor
 .DS_Store
 Thumbs.db

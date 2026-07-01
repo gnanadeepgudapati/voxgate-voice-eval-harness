@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2.6",
     "numpy>=1.26",
     "soundfile>=0.12",
+    "python-dotenv>=1.0",
 ]
 
 # Heavy / optional deps are gated behind extras so the CORE CONTRACT and SEMANTIC

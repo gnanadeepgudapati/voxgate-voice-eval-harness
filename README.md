@@ -47,24 +47,25 @@ uv sync --extra acoustic --extra judge --extra stats --extra dev
   per-evaluator isolation (`_safe()`) means the rest of the report still comes out clean.
 
   Provider defaults to Anthropic. `judges/factory.py`'s `get_default_judge_client()` is what
-  every judge metric falls back to when no client is injected — switch it with one env var:
+  every judge metric falls back to when no client is injected — switch it with one env var.
 
-  ```bash
-  # PowerShell
-  $env:VOXGATE_JUDGE_PROVIDER = "openai"
-  $env:OPENAI_API_KEY = "sk-..."
-
-  # bash
-  export VOXGATE_JUDGE_PROVIDER=openai
-  export OPENAI_API_KEY=sk-...
+  **Easiest: drop your key in `.env`** (repo root, already gitignored — copy `.env.example`
+  if you deleted it):
   ```
+  VOXGATE_JUDGE_PROVIDER=openai
+  OPENAI_API_KEY=sk-...
+  ```
+  `get_default_judge_client()` loads `.env` automatically on every call (via `python-dotenv`,
+  a core dependency) — no shell exports needed, and an already-set shell/OS environment
+  variable always takes priority over the file. `OPENAI_JUDGE_MODEL` optionally overrides the
+  model (default `gpt-4o`); set `VOXGATE_JUDGE_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`
+  to switch back. `judges/openai_client.py` / `judges/anthropic_client.py` are both thin
+  adapters over each SDK's structured-output parsing — swap providers without touching a
+  single metric.
 
-  These are plain environment variables — there's no `.env`-file loading wired up, so set
-  them in your shell (or your OS's persistent environment variables) before running
-  `pytest`/`eval_system.run`. `OPENAI_JUDGE_MODEL` optionally overrides the model (default
-  `gpt-4o`); `VOXGATE_JUDGE_PROVIDER=anthropic` (or unset) + `ANTHROPIC_API_KEY` switches
-  back. `judges/openai_client.py` / `judges/anthropic_client.py` are both thin adapters over
-  each SDK's structured-output parsing — swap providers without touching a single metric.
+  (You can still set these as real environment variables instead of using `.env` if you
+  prefer — `$env:OPENAI_API_KEY = "sk-..."` in PowerShell, `export OPENAI_API_KEY=sk-...`
+  in bash.)
 - `stats` — scipy + scikit-learn, for calibration (`judge_agreement` kappa, `drift` KS test).
 
 Core contracts and the full semantic suite run with `--extra dev` alone; nothing in

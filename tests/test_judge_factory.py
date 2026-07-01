@@ -1,6 +1,14 @@
 import pytest
 
+from eval_system.judges import factory
 from eval_system.judges.factory import get_default_judge_client
+
+
+@pytest.fixture(autouse=True)
+def no_real_dotenv(monkeypatch, tmp_path):
+    # These tests assert on VOXGATE_JUDGE_PROVIDER in isolation -- they must not
+    # pick up whatever a developer's real (gitignored, user-edited) .env contains.
+    monkeypatch.setattr(factory, "REPO_ROOT_DOTENV", tmp_path / "does_not_exist.env")
 
 
 def test_defaults_to_anthropic(monkeypatch):
