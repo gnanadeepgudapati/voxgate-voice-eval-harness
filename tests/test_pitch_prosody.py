@@ -40,6 +40,15 @@ def test_no_voiced_frames_reports_none():
 
     assert stats["voiced_frames"] == 0
     assert stats["monotone"] is None
+    assert stats["pitch_mean_hz"] is None
+
+
+def test_pitch_mean_hz_reported_alongside_std_and_range():
+    f0 = np.array([100.0, 200.0])
+
+    stats = prosody_stats(f0, monotone_std_threshold_hz=10.0)
+
+    assert stats["pitch_mean_hz"] == pytest.approx(150.0)
 
 
 def test_speech_rate_computed_from_agent_turns_only():

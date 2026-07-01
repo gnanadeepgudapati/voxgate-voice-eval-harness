@@ -36,11 +36,15 @@ def parselmouth_f0(audio: np.ndarray, sr: int) -> np.ndarray:
 
 def prosody_stats(f0_values: np.ndarray, monotone_std_threshold_hz: float = MONOTONE_STD_THRESHOLD_HZ) -> dict:
     if len(f0_values) == 0:
-        return {"voiced_frames": 0, "pitch_std_hz": None, "pitch_range_hz": None, "monotone": None}
+        return {
+            "voiced_frames": 0, "pitch_mean_hz": None, "pitch_std_hz": None,
+            "pitch_range_hz": None, "monotone": None,
+        }
 
     std = float(np.std(f0_values))
     return {
         "voiced_frames": len(f0_values),
+        "pitch_mean_hz": float(np.mean(f0_values)),
         "pitch_std_hz": std,
         "pitch_range_hz": float(np.max(f0_values) - np.min(f0_values)),
         "monotone": std < monotone_std_threshold_hz,

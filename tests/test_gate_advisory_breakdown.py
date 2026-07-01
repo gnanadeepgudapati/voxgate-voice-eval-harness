@@ -5,6 +5,7 @@ from eval_system.metrics import registry
 from eval_system.metrics.semantic import task_success, tool_call_ordering, instruction_adherence, faithfulness  # noqa: F401
 from eval_system.metrics.acoustic import barge_in, turn_taking_latency, latency_thresholds, pitch_prosody  # noqa: F401
 from eval_system.metrics.acoustic import entity_intelligibility, emotional_appropriateness, double_talk  # noqa: F401
+from eval_system.metrics.acoustic import naturalness_mos, ser_emotion, emotion_appropriateness_mm  # noqa: F401
 
 
 def test_breakdown_covers_every_registered_metric_with_a_rationale():
@@ -16,6 +17,7 @@ def test_breakdown_covers_every_registered_metric_with_a_rationale():
         "instruction_adherence_judge", "faithfulness", "barge_in",
         "turn_taking_latency", "latency_thresholds", "pitch_prosody",
         "entity_intelligibility", "emotional_appropriateness", "double_talk",
+        "naturalness_mos", "ser_emotion", "emotion_appropriateness_mm",
     ]:
         assert expected_metric in by_metric, f"missing {expected_metric}"
         assert by_metric[expected_metric]["rationale"], f"no rationale for {expected_metric}"
@@ -30,3 +32,17 @@ def test_breakdown_matches_claude_md_taxonomy_for_a_few_spot_checks():
     assert by_metric["barge_in"]["default_gating"] == "gate"
     assert by_metric["emotional_appropriateness"]["default_gating"] == "advisory"
     assert by_metric["entity_intelligibility"]["default_gating"] == "gate"
+
+
+def test_double_talk_labeled_as_live_follow_up():
+    breakdown = gate_advisory_breakdown(registry.REGISTRY)
+    by_metric = {row["metric"]: row for row in breakdown}
+
+    assert "LIVE FOLLOW-UP" in by_metric["double_talk"]["rationale"]
+
+
+def test_naturalness_mos_labeled_as_beyond_scope():
+    breakdown = gate_advisory_breakdown(registry.REGISTRY)
+    by_metric = {row["metric"]: row for row in breakdown}
+
+    assert "BEYOND-SCOPE" in by_metric["naturalness_mos"]["rationale"]

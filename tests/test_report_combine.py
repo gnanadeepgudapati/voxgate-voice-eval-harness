@@ -1,5 +1,13 @@
+import pytest
+
 from eval_system.metrics.base import Gating, MetricKind, MetricScore, Status
-from eval_system.report.combine import build_report, compute_ship_verdict, judge_trust_note, upsert_scores
+from eval_system.report.combine import (
+    build_report,
+    compute_metric_summary,
+    compute_ship_verdict,
+    judge_trust_note,
+    upsert_scores,
+)
 
 
 def _score(call_id, metric, kind, status, gating, evaluator_version="1", judge_prompt_version=None, score=1.0):
@@ -221,3 +229,55 @@ def test_build_report_aggregate_omits_judge_trust_note_when_a_judge_is_trusted()
     report = build_report(store, trusted_judge_metrics=frozenset({"faithfulness"}))
 
     assert "judge_trust_note" not in report.aggregate
+
+
+# --- per-metric summary (feeds the aggregate report section: gate pass/fail/
+# error counts, advisory flag rates, judge coverage) ---
+
+def test_compute_metric_summary_counts_status_per_metric():
+    scores = [
+        _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+        _score("call-2", "task_success", MetricKind.DETERMINISTIC, Status.FAIL, Gating.GATE),
+        _score("call-3", "task_success", MetricKind.DETERMINISTIC, Status.SKIPPED, Gating.GATE, score=None),
+    ]
+
+    summary = compute_metric_summary(scores)
+
+    assert summary["task_success"]["pass"] == 1
+    assert summary["task_success"]["fail"] == 1
+    assert summary["task_success"]["skipped"] == 1
+    assert summary["task_success"]["error"] == 0
+    assert summary["task_success"]["kind"] == "deterministic"
+    assert summary["task_success"]["gating"] == "gate"
+
+
+def test_compute_metric_summary_ran_excludes_skipped():
+    scores = [
+        _score("call-1", "faithfulness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY),
+        _score("call-2", "faithfulness", MetricKind.JUDGE, Status.ERROR, Gating.ADVISORY),
+        _score("call-3", "faithfulness", MetricKind.JUDGE, Status.SKIPPED, Gating.ADVISORY, score=None),
+    ]
+
+    summary = compute_metric_summary(scores)
+
+    assert summary["faithfulness"]["ran"] == 2  # skipped doesn't count as "ran" -- judge coverage
+
+
+def test_compute_metric_summary_flag_rate():
+    scores = [
+        _score("call-1", "pitch_prosody", MetricKind.SIGNAL, Status.FAIL, Gating.ADVISORY),
+        _score("call-2", "pitch_prosody", MetricKind.SIGNAL, Status.PASS, Gating.ADVISORY),
+        _score("call-3", "pitch_prosody", MetricKind.SIGNAL, Status.PASS, Gating.ADVISORY),
+    ]
+
+    summary = compute_metric_summary(scores)
+
+    assert summary["pitch_prosody"]["flag_rate"] == pytest.approx(1 / 3)
+
+
+def test_compute_metric_summary_flag_rate_none_when_never_ran():
+    scores = [_score("call-1", "faithfulness", MetricKind.JUDGE, Status.SKIPPED, Gating.ADVISORY, score=None)]
+
+    summary = compute_metric_summary(scores)
+
+    assert summary["faithfulness"]["flag_rate"] is None

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from eval_system.context.fixture_loader import load_fixture
 from eval_system.context.metric_context import MetricContext, Turn, build_metric_context
 from eval_system.metrics.acoustic.latency_thresholds import LatencyThresholdsMetric
@@ -28,6 +30,28 @@ def test_fails_when_a_gap_exceeds_the_threshold():
     assert score.gating is Gating.ADVISORY  # C1(7): advisory, doesn't gate on its own
     assert score.kind is MetricKind.DETERMINISTIC
     assert len(score.details["violations"]) == 1
+
+
+def test_first_token_latency_is_the_first_gap():
+    transcript = [
+        Turn(speaker="caller", t_start=0.0, t_end=1.0, text="hi"),
+        Turn(speaker="agent", t_start=1.4, t_end=2.0, text="hello"),
+        Turn(speaker="caller", t_start=2.5, t_end=3.0, text="ok"),
+        Turn(speaker="agent", t_start=4.0, t_end=4.5, text="bye"),
+    ]
+    ctx = _make_ctx(transcript)
+
+    score = LatencyThresholdsMetric().compute(ctx)
+
+    assert score.details["first_token_latency_sec"] == pytest.approx(0.4)
+
+
+def test_first_token_latency_none_when_skipped():
+    ctx = _make_ctx([Turn(speaker="agent", t_start=0.0, t_end=1.0, text="hello?")])
+
+    score = LatencyThresholdsMetric().compute(ctx)
+
+    assert "first_token_latency_sec" not in score.details
 
 
 def test_passes_when_all_gaps_within_threshold():

@@ -39,10 +39,10 @@ GATE_RATIONALE: dict[str, str] = {
     "pitch_prosody": "F0/speech-rate are perceptual proxies for naturalness, not correctness -- advisory.",
     "entity_intelligibility": "Round-trip STT on ground-truthed critical entities -- if a real STT engine can't recover it, a caller likely couldn't either.",
     "emotional_appropriateness": "Text judge over a prosody *summary*, not true multimodal audio -- always advisory per CLAUDE.md's explicit invariant, never promoted.",
-    "double_talk": "Overlap alone isn't necessarily a defect (natural backchannels overlap constantly) -- reports duration/ratio, advisory by nature.",
+    "double_talk": "[LIVE FOLLOW-UP] Overlap alone isn't necessarily a defect (natural backchannels overlap constantly) -- reports duration/ratio, advisory by nature. This is the live-follow-up drop-in evaluator (assessment.md's \"Live follow-up\" section), included proactively.",
     "ser_emotion": "Objective classifier on the raw waveform, but acted-emotion SER is a noisy proxy -- IEMOCAP humans only agree with each other at Fleiss' kappa ~0.27-0.48, so a noisier-than-human-agreement signal can't gate. Hardcoded non-promotable (it's SIGNAL-kind, structurally outside the judge-promotion path).",
     "emotion_appropriateness_mm": "Multimodal judge that hears real audio + conversational context, but LLM judges drift and are noisy (Part 1 Q3) -- always advisory, never promoted even if calibration passes, per CLAUDE.md's explicit invariant for emotion metrics.",
-    "naturalness_mos": "Non-intrusive MOS (DNSMOS/P.808) is a perceptual proxy that saturates above ~4 and can't reliably separate 'good' from 'excellent' -- hardcoded advisory always, same class of limitation as pitch_prosody.",
+    "naturalness_mos": "[BEYOND-SCOPE ADDITION] Non-intrusive MOS (DNSMOS/P.808) is a perceptual proxy that saturates above ~4 and can't reliably separate 'good' from 'excellent' -- hardcoded advisory always, same class of limitation as pitch_prosody. Not a metric required by assessment.md; included for completeness.",
 }
 
 

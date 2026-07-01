@@ -60,6 +60,11 @@ class LatencyThresholdsMetric(BaseMetric):
             status=Status.FAIL if violations else Status.PASS,
             gating=self.default_gating,
             score=0.0 if violations else 1.0,
-            details={"gaps": gaps, "violations": violations, "threshold_sec": self.ftl_threshold_sec},
+            details={
+                "gaps": gaps,
+                "violations": violations,
+                "threshold_sec": self.ftl_threshold_sec,
+                "first_token_latency_sec": gaps[0]["gap"],
+            },
             evaluator_version=self.version,
         )

@@ -68,6 +68,30 @@ def compute_ship_verdict(
     }
 
 
+def compute_metric_summary(scores: list[MetricScore]) -> dict[str, dict[str, Any]]:
+    """Per-metric rollup across all calls: status counts (pass/fail/error/
+    skipped), plus `ran` (attempted -- pass+fail+error, excluding skipped,
+    since a skip means the metric legitimately didn't apply) and `flag_rate`
+    (fail / ran) for quick scanning. Feeds the aggregate report section: gate
+    metrics' pass/fail/error counts, advisory metrics' flag rates, and judge
+    coverage (`ran` vs. total calls) all come from this one rollup."""
+    by_metric: dict[str, dict[str, Any]] = {}
+    for s in scores:
+        entry = by_metric.setdefault(s.metric, {
+            "kind": s.kind.value,
+            "gating": s.gating.value,
+            "pass": 0, "fail": 0, "error": 0, "skipped": 0,
+        })
+        entry[s.status.value] += 1
+
+    for entry in by_metric.values():
+        ran = entry["pass"] + entry["fail"] + entry["error"]
+        entry["ran"] = ran
+        entry["flag_rate"] = (entry["fail"] / ran) if ran else None
+
+    return by_metric
+
+
 def judge_trust_note(trusted_judge_metrics: frozenset[str]) -> str | None:
     """A grader (or CI operator) reading an empty `trusted_judge_metrics` list
     could easily misread it as a broken judge layer rather than what it is:
@@ -172,6 +196,7 @@ def build_report(store: ScoreStore, trusted_judge_metrics: frozenset[str] = froz
         "kind_counts": {k.value: sum(1 for s in all_scores if s.kind is k) for k in MetricKind},
         "error_rate": (sum(1 for s in all_scores if s.status is Status.ERROR) / len(all_scores)) if all_scores else 0.0,
         "trusted_judge_metrics": sorted(trusted_judge_metrics),
+        "metric_summary": compute_metric_summary(all_scores),
         **compute_ship_verdict(all_scores, trusted_judge_metrics),
     }
 

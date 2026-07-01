@@ -5,10 +5,14 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**All phases (0-9) complete.** 134/134 tests passing. Both suites, calibration, gating,
-report, validators/sampling/monitoring, CLI runner (`eval_system/run.py`), README, and
-design writeup are all in place. See `docs/CONTEXT.md` for the compressed current-state
-snapshot and remaining polish ideas (none blocking).
+**All phases (0-9) complete, plus substantial post-Phase-9 extension work.**
+264/264 tests passing. This checklist below reflects only the original Phase 0-9 build;
+everything added since (OpenAI judge support, run-level ship verdict, the two-proxy emotion
+attack with SER + a multimodal Gemini judge, known-answer tests, fixtures/TEMPLATE + the
+fixture validator, versioned Markdown+PDF reports, entity_intelligibility word-level
+location, and the combined-report rewrite with per-call breakdowns/measured values/
+aggregate) is tracked in `docs/CONTEXT.md`'s numbered list instead, since it was all built
+after this checklist was considered "done." Read CONTEXT.md first every session.
 
 ---
 

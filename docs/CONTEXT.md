@@ -5,69 +5,77 @@
 
 ## What this is
 Post-hoc eval system for an EXISTING inbound clinic scheduling voice agent. Scores recorded
-calls on two axes — **semantic** (tool calls, faithfulness, task success, adherence) and
-**acoustic** (barge-in, latency, prosody, emotion, intelligibility) — and fuses them into a
-two-tier **ship / don't-ship** verdict for CI, plus per-call + aggregate reports.
+calls on two axes — **semantic** and **acoustic** — and fuses them into a two-tier
+**ship / don't-ship** verdict for CI, plus per-call + aggregate + human-readable reports.
 
-## Status: feature-complete
-All 9 build phases are done, 134/134 tests passing. On branch `main` (build branch
-`build/eval-system` fast-forward-merged in; both pushed). `uv` venv on Python 3.13.5, all
-four extras (`acoustic`/`judge`/`stats`/`dev`) installed together.
+## Status: feature-complete, actively extended beyond the original 9-phase build
+264/264 tests passing. On `main` (single branch now; `build/eval-system` was merged in).
+`uv` venv, Python 3.13.5, all extras (`acoustic`/`judge`/`stats`/`dev`) installed together.
+`docs/PROGRESS.md` still shows the original Phase 0-9 checklist (all done) — everything
+below is what's been added since that checklist was last accurate.
 
-- **Contracts + fixtures + clock-join (Phases 1-3):** `metrics/base.py`, `metrics/registry.py`
-  (two-phase run + `_safe()` isolation + optional `metrics_filter`/`sampler`),
-  `context/metric_context.py` (`build_metric_context()` — canonical clock = audio sample
-  index @ sr; corrects a *known* per-channel capture skew, ground-truth timestamps already
-  authored on that clock by the fixture loader). 3 fixtures (`happy_path_book`,
-  `reschedule_trap`, `barge_in_basic`) with real Windows-SAPI TTS audio.
-- **Semantic suite / Suite A (Phase 4):** `task_success`, `tool_call_ordering` (state
-  reducer + `never_zero_appointments` invariant — catches the reschedule trap),
-  `instruction_adherence` (rule + judge, two classes), `faithfulness` (judge). Judges depend
-  on `judges/client.py`'s `JudgeClient` protocol; tests inject a fake, no network needed.
-- **Acoustic suite / Suite B (Phase 5):** `barge_in` (headline; VAD via `metrics/acoustic/
-  vad.py`'s shared `silero_vad_segments`), `turn_taking_latency` (p50/p90/p99), `latency_
-  thresholds` (deterministic, advisory/C1(7)), `pitch_prosody` (F0 + rate), `entity_
-  intelligibility` (round-trip STT + digit-normalized matching), `emotional_appropriateness`
-  (text judge over transcript + prosody summary, always advisory), `double_talk`
-  (live-follow-up drop-in).
-- **Calibration (Phase 6):** `judge_agreement` (Cohen's kappa, degenerate data never
-  "trusted"), `drift` (KS test vs. a frozen golden set).
-- **Gating + report (Phase 7):** `gating/gate.py`'s `evaluate_gate()` (pass^k conjunction
-  over gate-eligible metrics; ERROR fail-closed but distinct from FAIL; SKIPPED excluded from
-  the conjunction) + `gate_advisory_breakdown()` (rationale list). `report/combine.py`
-  upserts by `MetricScore.key` (C1(2)) and rolls up the aggregate split.
-- **Validators/sampling/monitoring (Phase 8):** `validators/preflight.py` (channel/clipping/
-  timeline checks + retry-then-quarantine, C1(4)), `metrics/sampling.py`
-  (`StratifiedJudgeSampler`, defaults to full coverage, C1(5)), `monitoring/
-  production_proxies.py` (ground-truth-free subset for live traffic).
-- **CLI + docs (Phase 9):** `eval_system/run.py` (`python -m eval_system.run --fixtures
-  fixtures/ --out out/ [--metrics a,b]`), `README.md`, `docs/design_writeup.md` (the graded
-  Part-1 argument — all 5 questions, Category-2/3 notes, PHI/BAA paragraph after the
-  faithfulness justification).
+## Registered metrics (14 total)
+Semantic: `task_success`, `tool_call_ordering`, `instruction_adherence_rule`,
+`instruction_adherence_judge`, `faithfulness`.
+Acoustic: `barge_in` (headline), `turn_taking_latency`, `latency_thresholds`, `pitch_prosody`,
+`entity_intelligibility`, `emotional_appropriateness`, `double_talk` (live-follow-up),
+`ser_emotion`, `emotion_appropriateness_mm` (multimodal Gemini judge, hears real audio),
+`naturalness_mos` (beyond-scope addition, DNSMOS).
 
-## Two real bugs this system caught in itself (see docs/ERRORS.md)
-1. `barge_in_basic`'s "genuine barge-in" scenario had events authored at absolute times but
-   no actual overlapping caller audio (rendered sequentially after the agent's cutoff, not
-   concurrently) — fixed by adding `CallBuilder.say_at()` for absolute-time placement and
-   regenerating the fixture. A live example of "never fabricate alignment data."
-2. `entity_intelligibility`'s substring match false-failed on spoken-digit vs. numeral
-   mismatches ("four eight two one three" vs. STT's "4-8213") on a real end-to-end CLI run —
-   fixed with number-word normalization before comparing.
+## What's been added since the original Phase 9 "done" snapshot
+1. **OpenAI judge support**: `judges/openai_client.py` + `judges/factory.py`
+   (`get_default_judge_client()`, env var `VOXGATE_JUDGE_PROVIDER=anthropic|openai`) so any
+   judge metric can swap providers via one env var. `.env`/`.env.example` at repo root
+   (gitignored) hold `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`; loaded
+   automatically via `python-dotenv`.
+2. **Judge score range bug (real, found via live OpenAI run)**: GPT-4o returned scores on a
+   0-10 scale for `instruction_adherence_judge`/`emotional_appropriateness` since nothing
+   constrained the pydantic schema. Fixed with `Field(ge=0.0, le=1.0)` on all three judgment
+   models (also `faithfulness`'s).
+3. **Run-level ship verdict**: `report/combine.py`'s `compute_ship_verdict()` — SHIP iff zero
+   FAIL among gate-eligible scores; ERROR never counts (only visible via `error_rate`).
+   `run_cli()` returns process exit code 0/1 for CI gating.
+4. **Two-proxy emotion attack** (`ser_emotion.py` + `emotion_appropriateness_mm.py`,
+   objective offline SER vs. contextual multimodal judge that hears real audio bytes) with
+   `compute_emotion_disagreement()` as the cross-metric trust signal (Part 1 Q3) — reporting
+   only, never gates. Gemini judge caches responses (`out/.judge_cache/`, keyed by
+   call_id/turn_index/prompt_version/model) for CI reproducibility.
+5. **Known-answer tests** for the reschedule trap and `barge_in` timing (exact math via
+   injected `SpeechSegment`s, since synthetic tones don't trigger real VAD — verified
+   empirically) — no bugs found, confirmed existing behavior is correct.
+6. **`fixtures/TEMPLATE/`** (copyable valid fixture skeleton, excluded from real eval runs by
+   name in `discover_fixtures()`) + `eval_system/validate_fixture.py` (authoring-time
+   preflight CLI, exit 0/1).
+7. **Versioned Markdown+PDF report**: every `write_report()` call produces a NEW
+   `report_<n>.md`/`report_<n>.pdf` (`next_report_number()` scans `out/`, never overwrites).
+   PDF via pure-Python `markdown` → `xhtml2pdf` (no native/GTK deps).
+8. **`entity_intelligibility` word-level entity location**: WhisperX was tried and rejected
+   (broke `ser_emotion` via a forced dependency downgrade — reverted); uses
+   `faster-whisper`'s own `word_timestamps=True` instead. `critical_entity_locations` now
+   pinpoints WHERE a critical entity survived/was mangled, not just whether.
+9. **Combined report rewrite** (this session): per-call metric breakdown (every MetricScore,
+   grouped semantic/acoustic, gate failures marked "⚠️ GATE"), acoustic measured-values
+   section (turn_taking_latency ms percentiles, pitch_prosody F0 mean/range/rate, latency_
+   thresholds FTL, entity_intelligibility per-entity table, barge_in per-event time-to-yield
+   ms), faithfulness findings per call, and an expanded Aggregate section (gate metric
+   pass/fail/error counts, advisory flag rates, judge coverage, error rate, deterministic-
+   vs-judge split). `double_talk`/`naturalness_mos` labeled in the gate-vs-advisory table as
+   "live follow-up" / "beyond-scope addition" respectively. Found and fixed a real rendering
+   bug: judge free-text notes with embedded newlines corrupted table rows — `_single_line()`
+   now collapses whitespace before truncating (see docs/ERRORS.md, 2026-07-01).
 
-## Key decisions (locked)
+## Key decisions (locked, unchanged from original build)
 - Open-loop, fixed-clock fixture replay only. No closed-loop bot-to-bot runner, no `agent/`.
 - Canonical clock = audio sample index @ sr; metrics never re-derive it.
-- One `MetricScore` contract; one `BaseMetric` = one `kind` (deterministic xor judge), never
-  mixed in a single class — hence `instruction_adherence`'s two-class split.
+- One `MetricScore` contract; one `BaseMetric` = one `kind`, never mixed in a single class.
 - Gating trust rule: only deterministic + calibration-trusted judges may hard-gate.
-  `emotional_appropriateness` is hardcoded never-eligible, not just defaulted advisory.
-- Category-1 features are additive only. Category-2/3 (DLQ, distributed workers, key
-  rotation, judge self-consistency, PHI/BAA) are writeup-only, documented in
-  `design_writeup.md` §3-5 — no fake infra.
+  `emotional_appropriateness`/`emotion_appropriateness_mm`/`ser_emotion` are hardcoded
+  never-eligible (SER structurally, via kind=signal; the two judges by explicit invariant).
+- Category-1 features additive only. Category-2/3 writeup-only (design_writeup.md).
 
-## Open items (non-blocking polish, not required by the rubric)
-- No OpenAI judge client built (Anthropic only) — extra installed, unused; would only matter
-  for a second-judge cross-check in calibration.
-- `emotional_appropriateness`'s "no multimodal audio judge" gap is a deliberate, documented
-  limitation (see design_writeup.md §3), not a TODO — fixing it would need a multimodal-
-  audio-capable `JudgeClient` implementation, out of scope here.
+## Open items (non-blocking)
+- Gemini free-tier rate limit (5 req/min) means `emotion_appropriateness_mm` can hit
+  `Status.ERROR` on some calls in a real run if run back-to-back too fast — by design this
+  never affects `ship` (ERROR ≠ FAIL), just visible in `error_rate`.
+- `docs/PROGRESS.md`'s checklist reflects only the original Phase 0-9 build; items 1-9 above
+  aren't tracked there as discrete checklist entries (tracked here instead).
