@@ -9,6 +9,11 @@ dependencies = [
     "numpy>=1.26",
     "soundfile>=0.12",
     "python-dotenv>=1.0",
+    # PDF companion for the Markdown report (report/pdf_report.py). Both are
+    # pure-Python (no native compiler/GTK needed) -- xhtml2pdf renders via
+    # reportlab, unlike weasyprint which needs system GTK/Pango on Windows.
+    "markdown>=3.6",
+    "xhtml2pdf>=0.2.15",
 ]
 
 # Heavy / optional deps are gated behind extras so the CORE CONTRACT and SEMANTIC

@@ -80,6 +80,13 @@ calls, ships/holds, deterministic/judge/signal counts, error rate, trusted-judge
 `gate_advisory_breakdown.json` — the explicit gate-vs-advisory list with a one-line rationale
 per metric (also produced directly by `gating.gate.gate_advisory_breakdown()`).
 
+Every run also writes the human-readable combined report as **`report_<n>.md` + `report_<n>.pdf`**
+— a new number each call (`report_1`, `report_2`, ...; `run.py`'s `next_report_number()` scans
+`out/` for the highest existing `report_<n>.md` and increments), so every run's report is kept
+rather than overwritten. The PDF is rendered from the same Markdown via a pure-Python pipeline
+(`markdown` → `xhtml2pdf`/reportlab — no native compiler or system GTK needed, unlike
+weasyprint) in `report/pdf_report.py`.
+
 ## Gate vs. advisory, at a glance
 
 | Gates | Advisory |

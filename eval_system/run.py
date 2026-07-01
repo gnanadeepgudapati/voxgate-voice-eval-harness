@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -19,6 +20,9 @@ from eval_system.metrics import registry
 from eval_system.metrics.base import MetricScore
 from eval_system.report.combine import Report, build_report, upsert_scores
 from eval_system.report.markdown_report import HEADLINE_METRIC, render_markdown_report
+from eval_system.report.pdf_report import markdown_to_pdf_bytes
+
+REPORT_FILENAME_RE = re.compile(r"^report_(\d+)\.md$")
 
 # Import every metric module so its @register side effect populates REGISTRY --
 # a fresh interpreter running `python -m eval_system.run` otherwise sees an
@@ -77,6 +81,22 @@ def _score_to_dict(score: MetricScore) -> dict:
     return d
 
 
+def next_report_number(out_dir: Path) -> int:
+    """Each write_report() call gets its own report_<n>.md/.pdf rather than
+    overwriting a static report.md -- every run's report is kept, not just
+    the latest. Scans existing report_<n>.md files and returns the next
+    integer (1 if none exist yet)."""
+    out_dir = Path(out_dir)
+    if not out_dir.exists():
+        return 1
+    existing = [
+        int(match.group(1))
+        for p in out_dir.iterdir()
+        if (match := REPORT_FILENAME_RE.match(p.name))
+    ]
+    return max(existing, default=0) + 1
+
+
 def write_report(report: Report, out_dir: Path) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +118,11 @@ def write_report(report: Report, out_dir: Path) -> None:
 
     breakdown = gate_advisory_breakdown(registry.REGISTRY)
     (out_dir / "gate_advisory_breakdown.json").write_text(json.dumps(breakdown, indent=2), encoding="utf-8")
-    (out_dir / "report.md").write_text(render_markdown_report(report, breakdown), encoding="utf-8")
+
+    report_n = next_report_number(out_dir)
+    report_markdown = render_markdown_report(report, breakdown)
+    (out_dir / f"report_{report_n}.md").write_text(report_markdown, encoding="utf-8")
+    (out_dir / f"report_{report_n}.pdf").write_bytes(markdown_to_pdf_bytes(report_markdown))
 
 
 def run_cli(argv: list[str] | None = None) -> int:
