@@ -1,0 +1,26 @@
+{
+  "tool_sequence": [
+    {
+      "name": "book_appointment",
+      "required_args": {
+        "provider": "Lee"
+      }
+    },
+    {
+      "name": "cancel_appointment",
+      "required_args": {}
+    }
+  ],
+  "invariants": [
+    "never_zero_appointments"
+  ],
+  "critical_entities": [
+    "Lee",
+    "Wednesday",
+    "two PM"
+  ],
+  "success_criteria": {
+    "final_tool": null,
+    "result_contains": {}
+  }
+}

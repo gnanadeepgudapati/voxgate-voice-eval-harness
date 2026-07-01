@@ -1,0 +1,20 @@
+{
+  "patients": {
+    "P100": {
+      "name": "Jane Doe",
+      "appointments": []
+    }
+  },
+  "providers": {
+    "Lee": {
+      "name": "Dr. Lee",
+      "availability": [
+        {
+          "date": "2026-07-07",
+          "time": "10:00",
+          "available": true
+        }
+      ]
+    }
+  }
+}

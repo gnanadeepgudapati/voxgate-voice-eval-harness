@@ -1,0 +1,4 @@
+{"name": "cough", "t": 1.8, "meta": {"channel": "caller"}}
+{"name": "agent_yield", "t": 2.1, "meta": {"trigger": "cough", "expected": "false_yield"}}
+{"name": "barge_in_start", "t": 8.434217687074831, "meta": {"channel": "caller"}}
+{"name": "agent_yield", "t": 8.88421768707483, "meta": {"trigger": "caller_speech", "expected": "prompt_yield"}}

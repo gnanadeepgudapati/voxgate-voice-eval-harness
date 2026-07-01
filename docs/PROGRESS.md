@@ -5,9 +5,10 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**Phase 2 — Fixture format + synthetic fixtures.** Phase 1 (core contracts) complete
-and tested (7/7 passing). Repo scaffolded under `eval_system/`, venv on Python 3.13.5
-via `uv`, heavy acoustic/judge deps gated behind optional extras.
+**Phase 3 — Clock-join backbone.** Phases 1-2 complete, 13/13 tests passing. Fixture
+format locked (call.wav 2-ch + transcript/tool_log/events .jsonl + scenario_db/expected
+.json); 3 fixtures generated with real TTS speech audio (Windows SAPI, 22050Hz) and
+timestamps derived from actual rendered clip lengths — not fabricated.
 
 ---
 
@@ -26,11 +27,11 @@ via `uv`, heavy acoustic/judge deps gated behind optional extras.
 - [x] Test: `_safe()` turns a crashing metric into `ERROR`, suite continues (C1(1))
 
 ## Phase 2 — Fixture format + synthetic fixtures
-- [ ] Define fixture schema (caller.wav, events.jsonl, scenario_db.json, expected.json)
-- [ ] Fixture: `happy_path_book` (clean booking)
-- [ ] Fixture: `reschedule_trap` (hold-new → confirm → release-old + injected mid-sequence failure)
-- [ ] Fixture: `barge_in_basic` (caller overlaps agent; + injected cough for false-yield test)
-- [ ] Test: fixtures load + validate against the schema
+- [x] Define fixture schema (call.wav 2-ch, transcript/tool_log/events .jsonl, scenario_db/expected .json)
+- [x] Fixture: `happy_path_book` (clean booking)
+- [x] Fixture: `reschedule_trap` (release-old before secure-new + failed rebook → zero-appointment window; catches the trap)
+- [x] Fixture: `barge_in_basic` (false yield on cough + prompt yield on genuine barge-in)
+- [x] Test: fixtures load + validate against the schema (`tests/test_fixtures.py`, 6 tests)
 
 ## Phase 3 — Clock-join backbone (riskiest — test hardest)
 - [ ] `context/metric_context.py` — build join: 2-ch audio + transcript + tool log + markers onto ONE clock (audio sample index @ sr)

@@ -1,0 +1,3 @@
+{"name": "cancel_appointment", "args": {"appointment_id": "A1", "confirmation": "48213"}, "result": {"status": "cancelled"}, "t": 15.05628117913832}
+{"name": "book_appointment", "args": {"provider": "Lee", "date": "2026-07-08", "time": "14:00", "patient_id": "P100"}, "result": {"status": "error", "reason": "slot_unavailable"}, "t": 15.356281179138321}
+{"name": "book_appointment", "args": {"provider": "Lee", "date": "2026-07-07", "time": "10:00", "patient_id": "P100"}, "result": {"status": "booked", "confirmation": "48213b"}, "t": 36.066984126984124}

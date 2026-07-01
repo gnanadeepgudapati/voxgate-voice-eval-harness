@@ -1,0 +1,5 @@
+{"speaker": "agent", "t_start": 0.3, "t_end": 2.1, "text": "Let me pull up your file and check what appointments you currently have on the schedule right now.", "asr_confidence": null}
+{"speaker": "caller", "t_start": 3.1, "t_end": 6.1341950113378685, "text": "Hello? Are you still there?", "asr_confidence": null}
+{"speaker": "agent", "t_start": 6.434195011337868, "t_end": 8.88421768707483, "text": "Sorry about that, yes, I'm still here. Let me continue checking your appointments now, one moment please.", "asr_confidence": null}
+{"speaker": "caller", "t_start": 8.934217687074831, "t_end": 13.718049886621316, "text": "Actually, never mind, I found the confirmation email.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 14.018049886621316, "t_end": 18.79687074829932, "text": "Sounds good, glad you found it. Have a great day.", "asr_confidence": null}

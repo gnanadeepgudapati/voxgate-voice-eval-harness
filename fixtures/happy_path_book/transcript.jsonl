@@ -1,0 +1,6 @@
+{"speaker": "agent", "t_start": 0.3, "t_end": 5.318775510204081, "text": "Thank you for calling Example Clinic. How can I help you today?", "asr_confidence": null}
+{"speaker": "caller", "t_start": 5.718775510204082, "t_end": 11.067256235827664, "text": "Hi, I'd like to book an appointment with Doctor Lee next Tuesday at ten AM.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 11.367256235827664, "t_end": 15.276054421768707, "text": "Sure, one moment while I check that availability.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 15.876054421768707, "t_end": 26.118820861678003, "text": "I found an opening with Doctor Lee on Tuesday at ten AM. I've booked that appointment for you. Your confirmation number is four eight two one three.", "asr_confidence": null}
+{"speaker": "caller", "t_start": 26.518820861678, "t_end": 29.273015873015872, "text": "Great, thank you so much.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 29.573015873015873, "t_end": 32.43718820861678, "text": "You're welcome. Goodbye.", "asr_confidence": null}

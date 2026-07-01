@@ -1,0 +1,10 @@
+{
+  "patients": {
+    "P100": {
+      "name": "Jane Doe",
+      "appointments": [
+        "A1"
+      ]
+    }
+  }
+}

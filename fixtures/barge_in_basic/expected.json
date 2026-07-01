@@ -1,0 +1,11 @@
+{
+  "tool_sequence": [],
+  "invariants": [],
+  "critical_entities": [
+    "confirmation email"
+  ],
+  "success_criteria": {
+    "final_tool": null,
+    "result_contains": {}
+  }
+}

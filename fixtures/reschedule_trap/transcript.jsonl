@@ -1,0 +1,8 @@
+{"speaker": "agent", "t_start": 0.3, "t_end": 5.318775510204081, "text": "Thank you for calling Example Clinic. How can I help you today?", "asr_confidence": null}
+{"speaker": "caller", "t_start": 5.718775510204082, "t_end": 11.362222222222222, "text": "I need to reschedule my appointment with Doctor Lee from Tuesday to Wednesday at two PM.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 11.662222222222223, "t_end": 14.856281179138321, "text": "Sure, let me look into that for you.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 15.356281179138321, "t_end": 22.109750566893425, "text": "I'm sorry, it looks like that time is no longer available. Let me find another option.", "asr_confidence": null}
+{"speaker": "caller", "t_start": 22.509750566893423, "t_end": 26.31859410430839, "text": "Wait, so do I even have an appointment right now?", "asr_confidence": null}
+{"speaker": "agent", "t_start": 26.718594104308387, "t_end": 35.76698412698413, "text": "Let me check. I apologize, there seems to have been an issue. Let me rebook that Tuesday slot for you right away.", "asr_confidence": null}
+{"speaker": "caller", "t_start": 36.26698412698413, "t_end": 38.52126984126984, "text": "Okay, thank you.", "asr_confidence": null}
+{"speaker": "agent", "t_start": 38.82126984126984, "t_end": 42.43519274376417, "text": "You're welcome, and sorry about the confusion.", "asr_confidence": null}
