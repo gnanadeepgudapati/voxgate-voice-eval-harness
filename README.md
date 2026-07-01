@@ -1,23 +1,97 @@
 # VoxGate — Voice Agent Evaluation Harness
 
-Post-hoc evaluation system for an existing inbound clinic-scheduling voice agent.
-Scores recorded calls on two axes — **semantic** (task success, tool-call ordering,
-faithfulness, instruction adherence) and **acoustic** (barge-in, turn-taking latency,
-prosody, emotion, entity intelligibility) — and fuses them into a two-tier
-ship / don't-ship verdict.
+Post-hoc evaluation system for an existing inbound clinic-scheduling voice agent. Scores
+recorded calls on two axes — **semantic** (task success, tool-call ordering, faithfulness,
+instruction adherence) and **acoustic** (barge-in, turn-taking latency, prosody, emotion,
+entity intelligibility) — and fuses them into a two-tier ship / don't-ship verdict for CI,
+plus per-call and aggregate reports.
 
-See `CLAUDE.md` for the design constraints and `docs/architecture.md` for the full
-component map. This file will be expanded with run instructions and the design
-rationale as the build progresses (Phase 9 of `docs/PROGRESS.md`).
+This is a *post-hoc scorer*, not the voice agent itself, and it replays **fixed-clock,
+pre-rendered fixtures** rather than driving a live bot-to-bot conversation — see
+`docs/design_writeup.md` §1 for why that's the reproducibility-preserving choice.
+
+- **`docs/design_writeup.md`** — the design argument (the graded deliverable): reproducibility,
+  taxonomy, proxy validity, gating, offline vs. online, plus the Category-2/3 design notes.
+- **`docs/architecture.md`** — the full component/directory map.
+- **`CLAUDE.md`** — locked decisions and constraints this build follows.
+- **`docs/PROGRESS.md` / `docs/ERRORS.md` / `docs/CONTEXT.md`** — build working-memory (what's
+  done, what broke and why, a compressed resumable snapshot).
 
 ## Quickstart
 
 ```bash
-uv sync --extra dev            # core contracts + tests only
-uv run pytest -q               # run tests
-uv run python -m eval_system.run --fixtures fixtures/ --out out/
+uv sync --extra dev                              # core contracts + semantic suite + tests
+uv run pytest -q                                 # run the test suite (134+ tests)
+
+uv run python -m eval_system.run \                # score every fixture -> reports
+    --fixtures fixtures/ --out out/
+uv run python -m eval_system.run \                # subset, for fast iteration
+    --fixtures fixtures/ --out out/ --metrics faithfulness,barge_in
 ```
 
-Optional extras: `--extra acoustic` (librosa/parselmouth/whisper/vad),
-`--extra judge` (Anthropic/OpenAI SDKs), `--extra stats` (scipy/scikit-learn for
-calibration). Core contracts and the semantic suite run without them.
+Optional extras (installed together, not one at a time — see `docs/ERRORS.md` for why
+sequential `--extra` syncs can uninstall packages from extras not listed in that call):
+
+```bash
+uv sync --extra acoustic --extra judge --extra stats --extra dev
+```
+
+- `acoustic` — librosa, parselmouth (Praat), faster-whisper, silero-vad, jiwer. Note: this
+  extra pulls in `torch`/`torchaudio` (silero-vad's dependency) and pins `numba>=0.61`
+  (librosa's own floor doesn't build on Python 3.13+ here — see `docs/ERRORS.md`). `webrtcvad`
+  was dropped in favor of `silero-vad` (both are CLAUDE.md-sanctioned VAD choices) since it
+  needs a C compiler this machine doesn't have.
+- `judge` — Anthropic + OpenAI SDKs, for the real judge client. **Without an API key
+  configured, judge metrics (`faithfulness`, `instruction_adherence_judge`,
+  `emotional_appropriateness`) report `Status.ERROR`, not a crash** — the registry's
+  per-evaluator isolation (`_safe()`) means the rest of the report still comes out clean.
+- `stats` — scipy + scikit-learn, for calibration (`judge_agreement` kappa, `drift` KS test).
+
+Core contracts and the full semantic suite run with `--extra dev` alone; nothing in
+`eval_system/metrics/base.py`, `context/metric_context.py`, or `metrics/registry.py` depends
+on the heavy optional libraries.
+
+## Output
+
+`--out out/` writes one JSON per call (`<call_id>.json`: `ship` verdict, `failures`, and every
+`MetricScore` — semantic and acoustic emit the identical schema), an `aggregate.json` (total
+calls, ships/holds, deterministic/judge/signal counts, error rate, trusted-judge set), and a
+`gate_advisory_breakdown.json` — the explicit gate-vs-advisory list with a one-line rationale
+per metric (also produced directly by `gating.gate.gate_advisory_breakdown()`).
+
+## Gate vs. advisory, at a glance
+
+| Gates | Advisory |
+|---|---|
+| `task_success`, `tool_call_ordering`, `instruction_adherence` (rule), `barge_in`, `entity_intelligibility` | `instruction_adherence` (judge), `faithfulness` (until calibration-trusted), `turn_taking_latency`, `latency_thresholds` (until promoted), `pitch_prosody`, `emotional_appropriateness` (always), `double_talk` |
+
+Full rationale per metric: `docs/design_writeup.md` §2–3, or `gate_advisory_breakdown.json`
+after a run.
+
+## Why this structure (short version)
+
+- **One contract.** Every metric — semantic or acoustic, deterministic or judge — returns the
+  same `MetricScore` (`metrics/base.py`) into the same registry and report. There's no
+  separate "acoustic report."
+- **Registry, not a hardcoded pipeline.** Dropping a metric file with `@register` on it is
+  the entire integration step (`metrics/registry.py`) — proven directly by the sampling and
+  gate-breakdown tests, and by `double_talk.py` (the live-follow-up addition) needing zero
+  runner edits.
+- **One canonical clock.** `context/metric_context.py`'s `build_metric_context()` is the
+  clock-join backbone: audio sample index at a fixed `sr`. Every acoustic metric reads times
+  from `MetricContext`; none re-derive them from raw audio. This was built and tested first,
+  deliberately, because a silent misalignment produces confidently wrong numbers with no
+  error (see `docs/architecture.md`'s "highest-risk component" note).
+- **Judges are a swappable seam, not a hardcoded SDK call.** `judges/client.py`'s
+  `JudgeClient` protocol means every judge metric's tests inject a fake and never need
+  network access or an API key; `AnthropicJudgeClient` is the one real, thin, deliberately
+  untested (nothing to assert without mocking the whole SDK) adapter.
+- **Trust is earned, not assumed.** Every judge starts advisory. `calibration/
+  judge_agreement.py` (kappa vs. a human set) is what lets `gating/gate.py`'s
+  `trusted_judge_metrics` promote one to gate-eligible — and `emotional_appropriateness`
+  is hardcoded to never be eligible, because it's honestly a text-over-a-prosody-summary
+  proxy, not true multimodal audio judgment.
+
+See `docs/design_writeup.md` for the full argument, including the two real bugs this system
+caught in itself while being built (a fabricated-audio-overlap fixture, and a digit-word vs.
+numeral STT mismatch) — both documented in `docs/ERRORS.md` with symptom/root-cause/fix.

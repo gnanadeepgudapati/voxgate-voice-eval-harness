@@ -5,13 +5,10 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**Phase 5 — Acoustic suite.** Phases 1-4 complete, 39/39 tests passing. Semantic
-suite (Suite A) fully built: `task_success`, `tool_call_ordering` (catches the
-reschedule trap), `instruction_adherence_rule` + `instruction_adherence_judge`,
-`faithfulness`. Judge metrics depend on `eval_system/judges/client.py`'s
-`JudgeClient` protocol (constructor-injected, lazily defaults to
-`AnthropicJudgeClient`), so tests use a fake client — no network/API key needed
-to run the suite. Next: `barge_in` (headline acoustic metric).
+**All phases (0-9) complete.** 134/134 tests passing. Both suites, calibration, gating,
+report, validators/sampling/monitoring, CLI runner (`eval_system/run.py`), README, and
+design writeup are all in place. See `docs/CONTEXT.md` for the compressed current-state
+snapshot and remaining polish ideas (none blocking).
 
 ---
 
@@ -79,17 +76,17 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [x] Test: coverage 100% → verdict identical to pre-sampling (C1(5))
 
 ## Phase 9 — Docs & deliverables
-- [ ] `README.md` — how to run + the *why* behind the structure
-- [ ] Design writeup (~2pp) — all 5 Part-1 questions, opinionated
-- [ ] Category-2 items as documented design decisions (no fake infra)
-- [ ] Category-3 PHI/BAA paragraph after faithfulness deterministic-vs-judge justification
+- [x] `README.md` — how to run + the *why* behind the structure
+- [x] Design writeup (~2pp) — `docs/design_writeup.md`, all 5 Part-1 questions, opinionated
+- [x] Category-2 items as documented design decisions (no fake infra) — design_writeup.md §4/§5
+- [x] Category-3 PHI/BAA paragraph after faithfulness deterministic-vs-judge justification — design_writeup.md §3
 - [x] Live-follow-up ready: `double_talk` drop-in (registered with zero runner edits, reuses the VAD seam)
 
 ## Definition of Done (rubric mirror)
-- [ ] Suite A runnable (task_success, tool_call_ordering catches trap, faithfulness, instruction_adherence)
-- [ ] Suite B runnable (barge_in aligned, turn_taking distribution, pitch_prosody, emotion honest, entity_intelligibility)
-- [ ] Registry: new metric drops in with zero runner edits
-- [ ] Calibration: judge_agreement (kappa) + drift (golden + KS)
-- [ ] Gating: two-tier pass^k; flaky judge cannot fail a good deploy
-- [ ] Combined report + explicit gate-vs-advisory list with rationale
-- [ ] README + design writeup + Category-2/3 notes
+- [x] Suite A runnable (task_success, tool_call_ordering catches trap, faithfulness, instruction_adherence)
+- [x] Suite B runnable (barge_in aligned, turn_taking distribution, pitch_prosody, emotion honest, entity_intelligibility)
+- [x] Registry: new metric drops in with zero runner edits (proven by `double_talk` + sampling/breakdown tests)
+- [x] Calibration: judge_agreement (kappa) + drift (golden + KS)
+- [x] Gating: two-tier pass^k; flaky judge cannot fail a good deploy
+- [x] Combined report + explicit gate-vs-advisory list with rationale
+- [x] README + design writeup + Category-2/3 notes
