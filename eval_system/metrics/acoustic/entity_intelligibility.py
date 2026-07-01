@@ -9,6 +9,7 @@ caller likely couldn't understand it either. STT is a swappable seam
 faster-whisper for real."""
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
@@ -23,6 +24,12 @@ STT_SAMPLE_RATE = 16000
 
 SttFn = Callable[[np.ndarray, int], str]
 
+_NUMBER_WORDS = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10", "eleven": "11", "twelve": "12",
+}
+
 
 def _faster_whisper_transcribe(audio: np.ndarray, sr: int) -> str:
     import librosa
@@ -34,9 +41,35 @@ def _faster_whisper_transcribe(audio: np.ndarray, sr: int) -> str:
     return " ".join(segment.text for segment in segments)
 
 
+def _normalize_spoken_numbers(text: str) -> str:
+    """Real STT tends to render spoken digits/small numbers as numerals
+    ("4-8213" for "four eight two one three", "10 AM" for "ten AM") -- a naive
+    substring check against the authored (word-form) entity misses this
+    entirely, producing a false FAIL on a gate metric. Normalize both sides to
+    the same word->digit form before comparing."""
+    text = re.sub(r"[.,\-]", " ", text.lower())
+    words = text.split()
+    return " ".join(_NUMBER_WORDS.get(w, w) for w in words)
+
+
+def _is_numeric_entity(entity: str) -> bool:
+    words = entity.lower().split()
+    return bool(words) and all(w in _NUMBER_WORDS or w.isdigit() for w in words)
+
+
 def missing_critical_entities(critical_entities: list[str], stt_text: str) -> list[str]:
-    normalized = stt_text.lower()
-    return [e for e in critical_entities if e.lower() not in normalized]
+    normalized_text = _normalize_spoken_numbers(stt_text)
+    text_digits = re.sub(r"\D", "", normalized_text)
+
+    missing = []
+    for entity in critical_entities:
+        if _is_numeric_entity(entity):
+            entity_digits = re.sub(r"\D", "", _normalize_spoken_numbers(entity))
+            if entity_digits not in text_digits:
+                missing.append(entity)
+        elif _normalize_spoken_numbers(entity) not in normalized_text:
+            missing.append(entity)
+    return missing
 
 
 def word_error_rate(reference: str, hypothesis: str) -> float | None:

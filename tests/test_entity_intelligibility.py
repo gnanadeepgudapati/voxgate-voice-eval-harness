@@ -37,6 +37,30 @@ def test_no_missing_entities_when_all_present():
     assert missing == []
 
 
+def test_spelled_out_digits_match_numeral_form_in_stt_output():
+    # Real STT tends to render spoken digits as numerals ("4-8213" for "four
+    # eight two one three") -- a naive substring check misses this entirely.
+    missing = missing_critical_entities(
+        ["four eight two one three"], "your confirmation number is 4-8213."
+    )
+
+    assert missing == []
+
+
+def test_spelled_out_hour_matches_numeral_form():
+    missing = missing_critical_entities(["ten AM"], "an opening at 10 AM works.")
+
+    assert missing == []
+
+
+def test_partial_word_match_is_not_a_false_positive():
+    # "Lee" must not be considered present just because it's a substring of
+    # "Leon" -- that's the model mis-transcribing "Lee" + "on", a genuine miss.
+    missing = missing_critical_entities(["Lee"], "an opening with dr leon tuesday")
+
+    assert missing == ["Lee"]
+
+
 def test_word_error_rate_zero_for_identical_text():
     assert word_error_rate("hello there", "hello there") == pytest.approx(0.0)
 
