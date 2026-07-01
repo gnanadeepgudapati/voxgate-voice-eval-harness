@@ -39,6 +39,7 @@ GATE_RATIONALE: dict[str, str] = {
     "pitch_prosody": "F0/speech-rate are perceptual proxies for naturalness, not correctness -- advisory.",
     "entity_intelligibility": "Round-trip STT on ground-truthed critical entities -- if a real STT engine can't recover it, a caller likely couldn't either.",
     "emotional_appropriateness": "Text judge over a prosody *summary*, not true multimodal audio -- always advisory per CLAUDE.md's explicit invariant, never promoted.",
+    "double_talk": "Overlap alone isn't necessarily a defect (natural backchannels overlap constantly) -- reports duration/ratio, advisory by nature.",
 }
 
 

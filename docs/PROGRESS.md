@@ -83,7 +83,7 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [ ] Design writeup (~2pp) — all 5 Part-1 questions, opinionated
 - [ ] Category-2 items as documented design decisions (no fake infra)
 - [ ] Category-3 PHI/BAA paragraph after faithfulness deterministic-vs-judge justification
-- [ ] Live-follow-up ready: `double_talk` drop-in OR emotion calibration vs 3 human clips
+- [x] Live-follow-up ready: `double_talk` drop-in (registered with zero runner edits, reuses the VAD seam)
 
 ## Definition of Done (rubric mirror)
 - [ ] Suite A runnable (task_success, tool_call_ordering catches trap, faithfulness, instruction_adherence)

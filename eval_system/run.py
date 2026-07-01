@@ -30,6 +30,7 @@ from eval_system.metrics.semantic import (  # noqa: F401
 )
 from eval_system.metrics.acoustic import (  # noqa: F401
     barge_in,
+    double_talk,
     emotional_appropriateness,
     entity_intelligibility,
     latency_thresholds,

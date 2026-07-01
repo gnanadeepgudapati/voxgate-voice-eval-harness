@@ -4,7 +4,7 @@ from eval_system.metrics import registry
 # Import every metric module so it's registered -- side effect of @register.
 from eval_system.metrics.semantic import task_success, tool_call_ordering, instruction_adherence, faithfulness  # noqa: F401
 from eval_system.metrics.acoustic import barge_in, turn_taking_latency, latency_thresholds, pitch_prosody  # noqa: F401
-from eval_system.metrics.acoustic import entity_intelligibility, emotional_appropriateness  # noqa: F401
+from eval_system.metrics.acoustic import entity_intelligibility, emotional_appropriateness, double_talk  # noqa: F401
 
 
 def test_breakdown_covers_every_registered_metric_with_a_rationale():
@@ -15,7 +15,7 @@ def test_breakdown_covers_every_registered_metric_with_a_rationale():
         "task_success", "tool_call_ordering", "instruction_adherence_rule",
         "instruction_adherence_judge", "faithfulness", "barge_in",
         "turn_taking_latency", "latency_thresholds", "pitch_prosody",
-        "entity_intelligibility", "emotional_appropriateness",
+        "entity_intelligibility", "emotional_appropriateness", "double_talk",
     ]:
         assert expected_metric in by_metric, f"missing {expected_metric}"
         assert by_metric[expected_metric]["rationale"], f"no rationale for {expected_metric}"
