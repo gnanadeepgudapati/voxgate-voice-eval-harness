@@ -51,9 +51,9 @@ class EmotionalAppropriatenessMetric(BaseMetric):
 
     def _get_client(self) -> JudgeClient:
         if self.client is None:
-            from eval_system.judges.anthropic_client import AnthropicJudgeClient
+            from eval_system.judges.factory import get_default_judge_client
 
-            self.client = AnthropicJudgeClient()
+            self.client = get_default_judge_client()
         return self.client
 
     def compute(self, ctx: "MetricContext") -> MetricScore:
