@@ -1,0 +1,30 @@
+{
+  "tool_sequence": [
+    {
+      "name": "check_availability",
+      "required_args": {
+        "provider": "Lee"
+      }
+    },
+    {
+      "name": "book_appointment",
+      "required_args": {
+        "provider": "Lee"
+      }
+    }
+  ],
+  "invariants": [],
+  "critical_entities": [
+    "Lee",
+    "Tuesday",
+    "ten AM",
+    "four eight two one three"
+  ],
+  "success_criteria": {
+    "final_tool": "book_appointment",
+    "result_contains": {
+      "confirmation": "48213",
+      "status": "booked"
+    }
+  }
+}

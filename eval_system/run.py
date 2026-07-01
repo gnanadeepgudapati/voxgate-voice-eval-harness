@@ -43,8 +43,16 @@ from eval_system.metrics.acoustic import (  # noqa: F401
 )
 
 
+TEMPLATE_FIXTURE_DIR_NAME = "TEMPLATE"
+
+
 def discover_fixtures(fixtures_dir: Path) -> list[Path]:
-    return sorted(p for p in Path(fixtures_dir).iterdir() if p.is_dir())
+    # fixtures/TEMPLATE/ is a copyable authoring skeleton (see fixtures/TEMPLATE/README.md),
+    # not a real scenario -- it must never be scored as part of a real eval run.
+    return sorted(
+        p for p in Path(fixtures_dir).iterdir()
+        if p.is_dir() and p.name != TEMPLATE_FIXTURE_DIR_NAME
+    )
 
 
 def score_fixture_set(

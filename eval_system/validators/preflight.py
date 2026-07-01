@@ -46,6 +46,33 @@ def preflight_check(fixture: "RawFixture") -> list[ValidationIssue]:
     return issues
 
 
+def check_events_timeline(fixture: "RawFixture") -> list[ValidationIssue]:
+    """Authoring-time check (not part of preflight_check(), which runs on
+    every scoring pass): events.jsonl timestamps must be non-negative,
+    strictly increasing, and within the call's audio duration. A fixture
+    author's typo here (e.g. a marker placed after the audio ends) silently
+    produces a meaningless metric rather than an error, so this is checked
+    explicitly before a fixture is trusted."""
+    issues: list[ValidationIssue] = []
+    duration = len(fixture.audio_caller) / fixture.sr if fixture.sr else 0.0
+    prev_t: float | None = None
+    for evt in fixture.events:
+        if evt.t < 0:
+            issues.append(ValidationIssue("events_timeline", f"event '{evt.name}' has negative t={evt.t}"))
+        if evt.t > duration + 1e-3:
+            issues.append(ValidationIssue(
+                "events_timeline",
+                f"event '{evt.name}' at t={evt.t:.3f}s exceeds call duration ({duration:.2f}s)",
+            ))
+        if prev_t is not None and evt.t <= prev_t:
+            issues.append(ValidationIssue(
+                "events_timeline",
+                f"event '{evt.name}' at t={evt.t} is not strictly after the previous event (t={prev_t})",
+            ))
+        prev_t = evt.t
+    return issues
+
+
 @dataclass
 class ProcessingResult:
     call_id: str

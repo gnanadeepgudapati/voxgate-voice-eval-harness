@@ -1,0 +1,2 @@
+{"name": "check_availability", "args": {"provider": "Lee", "date": "2026-07-07", "time": "10:00"}, "result": {"available": true}, "t": 15.426054421768708}
+{"name": "book_appointment", "args": {"provider": "Lee", "date": "2026-07-07", "time": "10:00", "patient_id": "P100"}, "result": {"status": "booked", "confirmation": "48213"}, "t": 15.626054421768707}

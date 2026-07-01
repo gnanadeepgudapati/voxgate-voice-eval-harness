@@ -116,3 +116,31 @@ after a run.
 See `docs/design_writeup.md` for the full argument, including the two real bugs this system
 caught in itself while being built (a fabricated-audio-overlap fixture, and a digit-word vs.
 numeral STT mismatch) — both documented in `docs/ERRORS.md` with symptom/root-cause/fix.
+
+## Extending VoxGate: two different things, don't confuse them
+
+**Adding a fixture** tests the *agent* — a new scenario (a new reschedule pattern, a new
+interrupt timing) scored by the *existing* metrics.
+
+```bash
+cp -r fixtures/TEMPLATE fixtures/my_new_scenario
+uv run python -m eval_system.validate_fixture fixtures/my_new_scenario/   # validate first
+uv run python -m eval_system.run --fixtures fixtures/ --out out/          # then the full eval
+```
+
+`fixtures/TEMPLATE/` is a real, valid, copyable fixture (`fixtures/TEMPLATE/README.md` is the
+full field-by-field authoring guide — what each of the six files is for, the event
+vocabulary, and — the part that's easy to get subtly wrong — how to place an interrupt
+marker so a `barge_in` test actually measures something real). `validate_fixture` is a
+fast, standalone preflight (channels, timeline bounds, unknown tool names, and a
+semantic-alignment check that catches the #1 real failure mode: an interrupt placed where
+the agent isn't speaking, which runs without error but measures nothing) — run it before
+trusting a new fixture, and it's cheap enough for a pre-commit hook or CI gate (exit 0/1).
+`fixtures/TEMPLATE/` itself is excluded from real eval runs (`discover_fixtures()` in
+`run.py` skips it by name) — it's a skeleton to copy, not a scenario to score.
+
+**Adding a metric** tests a new *dimension* of ALL existing (and future) calls — drop a file
+in `metrics/semantic/` or `metrics/acoustic/`, decorate the class with `@register`, done; zero
+runner edits (proven by `double_talk.py`, the live-follow-up addition, and by `ser_emotion.py`/
+`emotion_appropriateness_mm.py`). See "Why this structure" above and `docs/design_writeup.md`
+§2 for the deterministic-vs-signal-vs-judge decision each new metric should defend.

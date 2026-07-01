@@ -13,6 +13,14 @@ def test_discover_fixtures_finds_known_fixture_dirs():
     assert {d.name for d in dirs} == {"happy_path_book", "reschedule_trap", "barge_in_basic"}
 
 
+def test_discover_fixtures_excludes_template():
+    # fixtures/TEMPLATE/ is a copyable authoring skeleton, not a real scenario --
+    # it must never be swept into a real eval run's aggregate.
+    dirs = discover_fixtures(FIXTURES_DIR)
+
+    assert "TEMPLATE" not in {d.name for d in dirs}
+
+
 def test_score_fixture_set_produces_a_report_over_all_fixtures():
     report = score_fixture_set(FIXTURES_DIR, metrics_filter=FAST_METRICS)
 
