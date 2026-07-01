@@ -23,7 +23,7 @@ LOW_ASR_CONFIDENCE_THRESHOLD = 0.6
 
 class FaithfulnessJudgment(BaseModel):
     grounded: bool
-    score: float
+    score: float = Field(ge=0.0, le=1.0, description="0.0 (not grounded) to 1.0 (fully grounded)")
     ungrounded_claims: list[str] = Field(default_factory=list)
     rationale: str = ""
 

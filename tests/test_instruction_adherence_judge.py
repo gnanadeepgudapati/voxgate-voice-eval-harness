@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from eval_system.context.metric_context import MetricContext, Turn
 from eval_system.metrics.base import Gating, MetricKind, Status
 from eval_system.metrics.semantic.instruction_adherence import (
@@ -53,3 +56,12 @@ def test_fails_when_judge_finds_rules_broken():
 
     assert score.status is Status.FAIL
     assert score.details["notes"] == "made a promise it can't keep"
+
+
+def test_score_outside_0_to_1_is_rejected():
+    # A real GPT-4o run returned score=6.0 (a 0-10 scale) with no constraint
+    # in place -- MetricScore.score is documented as 0..1. Must fail loudly
+    # (-> Status.ERROR via registry._safe()) rather than silently corrupt
+    # the report with an out-of-range value.
+    with pytest.raises(ValidationError):
+        InstructionAdherenceJudgment(followed_rules=True, score=6.0, notes="oops")

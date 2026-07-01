@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from eval_system.context.fixture_loader import load_fixture
 from eval_system.context.metric_context import MetricContext, ToolEvent, Turn, build_metric_context
 from eval_system.metrics.base import Gating, MetricKind, Status
@@ -90,3 +93,8 @@ def test_missing_asr_confidence_does_not_add_low_confidence_note():
     FaithfulnessMetric(client=fake).compute(ctx)
 
     assert "low-confidence" not in fake.last_prompt
+
+
+def test_score_outside_0_to_1_is_rejected():
+    with pytest.raises(ValidationError):
+        FaithfulnessJudgment(grounded=True, score=1.5, rationale="oops")

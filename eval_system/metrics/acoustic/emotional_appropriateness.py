@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from eval_system.judges.client import JudgeClient
 from eval_system.metrics.acoustic.pitch_prosody import parselmouth_f0, prosody_stats
@@ -32,7 +32,7 @@ def _default_prosody_fn(audio: np.ndarray, sr: int) -> dict:
 
 class EmotionalAppropriatenessJudgment(BaseModel):
     appropriate: bool
-    score: float
+    score: float = Field(ge=0.0, le=1.0, description="0.0 (inappropriate) to 1.0 (fully appropriate)")
     notes: str = ""
 
 

@@ -1,4 +1,6 @@
 import numpy as np
+import pytest
+from pydantic import ValidationError
 
 from eval_system.context.metric_context import MetricContext, Turn
 from eval_system.metrics.acoustic.emotional_appropriateness import (
@@ -64,3 +66,8 @@ def test_prompt_includes_transcript_and_prosody_summary():
 
     assert "I am very frustrated right now." in fake.last_prompt
     assert "monotone" in fake.last_prompt.lower()
+
+
+def test_score_outside_0_to_1_is_rejected():
+    with pytest.raises(ValidationError):
+        EmotionalAppropriatenessJudgment(appropriate=True, score=8.5, notes="oops")
