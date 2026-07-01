@@ -16,26 +16,45 @@ Full suite passing (`uv run pytest -q`, no failures). Currently on `build/eval-s
 `docs/PROGRESS.md` still shows the original Phase 0-9 checklist (all done) — everything
 below is what's been added since that checklist was last accurate.
 
-## In progress right now: report presentation + README (Deliverable 2) polish pass
-Explicit constraint for this whole pass: **no metric logic, thresholds, gating, or
-MetricScore schema changes — presentation + docs only.**
-- **Done:** `report/html_report.py` rewritten — static `report.md`/`.html`/`.pdf` (versioned
-  `report_<n>` fully removed), clean CSS badges (no Unicode — xhtml2pdf renders Unicode
-  glyphs as garbled boxes), inline-style zebra striping (`tr:nth-child` doesn't render in
-  xhtml2pdf), `<colgroup>` column widths on every table incl. the 3 aggregate tables, title=
-  tooltip + trailing `<details>` overflow for truncated reason/rationale text, header lists
-  every gate failure (no "+N more"). Real bug found + fixed this session: xhtml2pdf ignores
-  `word-break`/`overflow-wrap` inside fixed-width table cells — long unbroken metric names
-  (`instruction_adherence_judge`, `emotion_appropriateness_mm`) overflowed straight into the
-  next column. Fixed via `_breakable_metric_name()` (inserts a real space after each
-  underscore — xhtml2pdf DOES wrap on real whitespace). See docs/ERRORS.md 2026-07-01 for the
-  two false leads (title-length, then a flawed "word-break works" test) before finding the
-  real cause via PyMuPDF bounding-box inspection. Visually verified all pages of a fresh
-  `out/report.pdf` render correctly (no overlap, no empty gaps, no garbled badges).
-- **Not started:** README.md rewrite for Deliverable 2 (two-suite quickstart, registry
-  example, fixture format incl. TEMPLATE exclusion, gate-vs-advisory table, honest
-  limitations section) — must actually run the quickstart commands after writing to verify.
-- Task tracker has this as task #13, pending.
+## Report presentation + README (Deliverable 2) + conciseness pass — ALL DONE
+Explicit constraint for this whole multi-part pass: **no metric logic, thresholds, gating,
+or MetricScore schema changes — presentation + docs only.**
+1. `report/html_report.py` rewritten — static `report.md`/`.html`/`.pdf` (versioned
+   `report_<n>` fully removed), clean CSS badges, inline-style zebra striping, `<colgroup>`
+   column widths everywhere, title=/`<details>` overflow, header lists every gate failure.
+   Real bug found+fixed: xhtml2pdf ignores `word-break`/`overflow-wrap` in table cells — long
+   metric names overflowed into the next column; fixed via `_breakable_metric_name()`
+   (real space after each underscore — xhtml2pdf DOES wrap on real whitespace). Two false
+   leads first (title-length cap, a flawed "word-break works" test) — see ERRORS.md 2026-07-01.
+2. `README.md` fully rewritten for Deliverable 2 — quickstart (every command actually run
+   end-to-end to verify), two-suite metric tables with kind+rationale, registry example,
+   real 6-file fixture format, single-verdict rule, full gate-vs-advisory table, honest
+   limitations section. Found a real quickstart bug: `uv sync --extra dev` alone can't run
+   `pytest -q` (scipy/sklearn imports at module level in calibration/ break collection) —
+   documented, README now says install all 4 extras together.
+3. Combined-report conciseness pass (user follow-up request) — cut markdown_report.py /
+   html_report.py from verbose to skimmable: deleted the standalone "Acoustic measured
+   values" and "Faithfulness judge findings" prose sections entirely, folding their numbers
+   (barge-in time-to-yield/event, turn-taking p50/p90/p99, F0/rate, first-token latency,
+   faithfulness claim-count+rationale) into the existing per-call metrics table's Reason
+   column instead. `entity_intelligibility` reason only ever listed failures (no change
+   needed there). Judge Reason cells now truncate at ~80 chars at a word boundary (not
+   140, not mid-word) with `title=`/`<details>` overflow in HTML. ERROR reasons compressed
+   (`ERROR — quota exceeded (429)` for the recurring Gemini rate-limit case, short
+   `ERROR — <exc>` otherwise) instead of dumping the raw exception payload. Dropped
+   `emotional_appropriateness` from per-call tables only (duplicates the two-proxy emotion
+   signal already tracked per call) — still rolls up in Aggregate. Trimmed every
+   `GATE_RATIONALE` string in `gating/gate.py` to one crisp sentence (no more `(C1(7))` /
+   "per CLAUDE.md's explicit invariant" internal-reference cruft) and synced README's
+   mirror table. Added `GATE_RATIONALE_MAX_LEN=140` in html_report.py distinct from the
+   per-call table's `REASON_MAX_LEN=80` — the gate table's rationale is already one crisp
+   sentence and its column is 68% wide, so it doesn't need the same aggressive cap (first
+   pass wrongly applied 80 there too, cutting sentences mid-word; fixed).
+   Result: `out/report.pdf` went from 14 pages to 10; visually re-verified via PyMuPDF —
+   no overlap, no garbled badges, full sentences in the gate-vs-advisory table.
+
+All of tasks #10-19 (html_report build, wiring, visual verify, README, and the 6-part
+conciseness pass) are complete. Full test suite green throughout (`uv run pytest -q`).
 
 ## Registered metrics (14 total)
 Semantic: `task_success`, `tool_call_ordering`, `instruction_adherence_rule`,

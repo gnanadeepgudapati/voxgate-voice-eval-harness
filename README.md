@@ -279,21 +279,21 @@ from):
 
 | Metric | Gating | Rationale |
 |---|---|---|
-| `task_success` | **gate** | Deterministic: final tool call vs. the fixture's ground-truth success criteria. No proxy involved. |
-| `tool_call_ordering` | **gate** | Deterministic state reducer incl. the reschedule-trap invariant — catches a real correctness bug, not a style preference. |
-| `instruction_adherence_rule` | **gate** | Deterministic substring check that critical entities were read back to the caller — objective and ground-truthed. |
-| `barge_in` | **gate** | VAD-derived but a deterministic decision once computed, and the headline correctness behavior for a voice agent — a real barge-in miss is a real defect. |
+| `task_success` | **gate** | Deterministic: final tool call checked against the fixture's ground-truth success criteria. |
+| `tool_call_ordering` | **gate** | Deterministic state-machine check, including the reschedule-trap invariant — catches a real correctness bug. |
+| `instruction_adherence_rule` | **gate** | Deterministic substring check that critical entities were read back to the caller. |
+| `barge_in` | **gate** | Deterministic once computed from VAD, and the headline interruption-handling behavior — a real miss is a real defect. |
 | `entity_intelligibility` | **gate** | Round-trip STT on ground-truthed critical entities — if a real STT engine can't recover it, a caller likely couldn't either. |
-| `instruction_adherence_judge` | advisory | LLM judge for conversational nuance a keyword check can't capture; starts advisory until `judge_agreement` clears the kappa threshold. |
-| `faithfulness` | advisory | LLM judge; grounding matters but the judge itself is an unproven proxy until calibration trusts it — advisory until promoted. |
-| `turn_taking_latency` | advisory | Reports a distribution (p50/p90/p99), not a single call verdict — advisory by nature. |
-| `latency_thresholds` | advisory | Deterministic timestamp arithmetic against a fixed threshold, but the threshold itself is a judgment call — advisory until promoted. |
-| `pitch_prosody` | advisory | F0/speech-rate are perceptual proxies for naturalness, not correctness. |
-| `emotional_appropriateness` | advisory (always) | Text judge over a prosody *summary*, not true multimodal audio — never promoted, per explicit invariant. |
-| `ser_emotion` | advisory (never-promotable) | IEMOCAP humans only agree with each other at Fleiss' kappa ~0.27–0.48 on acted emotion — a noisier-than-human-agreement signal can't gate. |
-| `emotion_appropriateness_mm` | advisory (always) | Multimodal judge hears real audio + context, but LLM judges drift and are noisy — never promoted even if calibration passes. |
-| `double_talk` | advisory | Overlap alone isn't necessarily a defect (natural backchannels overlap constantly) — reports duration/ratio. Live-follow-up drop-in. |
-| `naturalness_mos` | advisory | Non-intrusive MOS saturates above ~4 and can't reliably separate "good" from "excellent." Beyond-scope addition. |
+| `instruction_adherence_judge` | advisory | LLM judge for conversational nuance a keyword check can't capture — advisory until calibration earns trust. |
+| `faithfulness` | advisory | LLM judge for grounding — advisory until calibration proves the judge itself trustworthy. |
+| `turn_taking_latency` | advisory | Reports a latency distribution (p50/p90/p99), not a single verdict — advisory by nature. |
+| `latency_thresholds` | advisory | Deterministic arithmetic against a threshold that is itself a judgment call — advisory until promoted. |
+| `pitch_prosody` | advisory | F0 and speech rate are perceptual proxies for naturalness, not correctness. |
+| `emotional_appropriateness` | advisory (always) | Text judge over a prosody summary, not true multimodal audio — always advisory, never promoted. |
+| `ser_emotion` | advisory (never-promotable) | Objective classifier, but acted-emotion SER is noisier than human inter-rater agreement (IEMOCAP kappa ~0.3–0.5) — can't gate. |
+| `emotion_appropriateness_mm` | advisory (always) | Multimodal judge that hears real audio and context, but LLM judges drift and are noisy — always advisory, never promoted. |
+| `double_talk` | advisory | Overlap alone isn't necessarily a defect — reports duration/ratio, advisory by nature. Live-follow-up drop-in. |
+| `naturalness_mos` | advisory | Non-intrusive MOS saturates above ~4 and can't separate "good" from "excellent." Beyond-scope addition. |
 
 ## Known limitations — honesty about what's not solved
 

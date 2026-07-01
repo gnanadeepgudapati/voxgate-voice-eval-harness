@@ -258,6 +258,54 @@ def test_hold_banner_when_gate_failure():
     assert ">HOLD<" in html
 
 
+def test_acoustic_measured_values_heading_removed():
+    report = _report({
+        "call-1": [_score("call-1", "pitch_prosody", MetricKind.SIGNAL, Status.PASS, Gating.ADVISORY,
+                           details={"pitch_mean_hz": 150.0, "pitch_range_hz": 80.0, "issues": []})],
+    })
+
+    html = render_html_report(report, GATE_BREAKDOWN)
+
+    assert "Acoustic measured values" not in html
+
+
+def test_faithfulness_findings_heading_removed():
+    report = _report({
+        "call-1": [_score("call-1", "faithfulness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY,
+                           details={"ungrounded_claims": [], "rationale": "all claims grounded"})],
+    })
+
+    html = render_html_report(report, GATE_BREAKDOWN)
+
+    assert "Faithfulness judge findings" not in html
+
+
+def test_emotional_appropriateness_dropped_from_per_call_table():
+    report = _report({
+        "call-1": [
+            _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+            _score("call-1", "emotional_appropriateness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY,
+                   details={"notes": "calm and appropriate"}),
+        ],
+    })
+
+    html = render_html_report(report, GATE_BREAKDOWN)
+
+    per_call_section = html.split("Headline metric")[0]
+    assert "emotional_ appropriateness" not in per_call_section  # breakable form of the metric name
+
+
+def test_emotional_appropriateness_still_in_aggregate():
+    report = _report({
+        "call-1": [_score("call-1", "emotional_appropriateness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY)],
+    })
+
+    html = render_html_report(report, GATE_BREAKDOWN)
+
+    aggregate_section = html.split("Aggregate")[1]
+    assert "emotional_ appropriateness" in aggregate_section
+
+
 def test_html_escapes_special_characters_in_reason_text():
     report = _report({
         "call-1": [_score("call-1", "instruction_adherence_judge", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY,

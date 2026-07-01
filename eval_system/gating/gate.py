@@ -28,21 +28,21 @@ GATE_FAILING_STATUSES = (Status.FAIL, Status.ERROR)
 # rather than in report/combine.py since it's about gating policy, not output
 # formatting.
 GATE_RATIONALE: dict[str, str] = {
-    "task_success": "Deterministic: final tool call vs. the fixture's ground-truth success criteria. No proxy involved.",
-    "tool_call_ordering": "Deterministic state reducer incl. the reschedule-trap invariant -- catches a real correctness bug, not a style preference.",
-    "instruction_adherence_rule": "Deterministic substring check that critical entities were read back to the caller -- objective and ground-truthed.",
-    "instruction_adherence_judge": "LLM judge for conversational nuance a keyword check can't capture; starts advisory until judge_agreement clears the kappa threshold.",
-    "faithfulness": "LLM judge; grounding matters but the judge itself is an unproven proxy until calibration trusts it -- advisory until promoted.",
-    "barge_in": "VAD-derived but a deterministic decision once computed, and the headline correctness behavior for a voice agent -- a real barge-in miss is a real defect.",
-    "turn_taking_latency": "Reports a distribution (p50/p90/p99), not a single call verdict -- advisory by nature; feeds `latency_thresholds` once a hard cutoff is chosen.",
-    "latency_thresholds": "Deterministic timestamp arithmetic against a fixed threshold, but the threshold itself is a judgment call -- advisory until promoted (C1(7)).",
-    "pitch_prosody": "F0/speech-rate are perceptual proxies for naturalness, not correctness -- advisory.",
+    "task_success": "Deterministic: final tool call checked against the fixture's ground-truth success criteria.",
+    "tool_call_ordering": "Deterministic state-machine check, including the reschedule-trap invariant -- catches a real correctness bug.",
+    "instruction_adherence_rule": "Deterministic substring check that critical entities were read back to the caller.",
+    "instruction_adherence_judge": "LLM judge for conversational nuance a keyword check can't capture -- advisory until calibration earns trust.",
+    "faithfulness": "LLM judge for grounding -- advisory until calibration proves the judge itself trustworthy.",
+    "barge_in": "Deterministic once computed from VAD, and the headline interruption-handling behavior -- a real miss is a real defect.",
+    "turn_taking_latency": "Reports a latency distribution (p50/p90/p99), not a single verdict -- advisory by nature.",
+    "latency_thresholds": "Deterministic arithmetic against a threshold that is itself a judgment call -- advisory until promoted.",
+    "pitch_prosody": "F0 and speech rate are perceptual proxies for naturalness, not correctness.",
     "entity_intelligibility": "Round-trip STT on ground-truthed critical entities -- if a real STT engine can't recover it, a caller likely couldn't either.",
-    "emotional_appropriateness": "Text judge over a prosody *summary*, not true multimodal audio -- always advisory per CLAUDE.md's explicit invariant, never promoted.",
-    "double_talk": "[LIVE FOLLOW-UP] Overlap alone isn't necessarily a defect (natural backchannels overlap constantly) -- reports duration/ratio, advisory by nature. This is the live-follow-up drop-in evaluator (assessment.md's \"Live follow-up\" section), included proactively.",
-    "ser_emotion": "Objective classifier on the raw waveform, but acted-emotion SER is a noisy proxy -- IEMOCAP humans only agree with each other at Fleiss' kappa ~0.27-0.48, so a noisier-than-human-agreement signal can't gate. Hardcoded non-promotable (it's SIGNAL-kind, structurally outside the judge-promotion path).",
-    "emotion_appropriateness_mm": "Multimodal judge that hears real audio + conversational context, but LLM judges drift and are noisy (Part 1 Q3) -- always advisory, never promoted even if calibration passes, per CLAUDE.md's explicit invariant for emotion metrics.",
-    "naturalness_mos": "[BEYOND-SCOPE ADDITION] Non-intrusive MOS (DNSMOS/P.808) is a perceptual proxy that saturates above ~4 and can't reliably separate 'good' from 'excellent' -- hardcoded advisory always, same class of limitation as pitch_prosody. Not a metric required by assessment.md; included for completeness.",
+    "emotional_appropriateness": "Text judge over a prosody summary, not true multimodal audio -- always advisory, never promoted.",
+    "double_talk": "[LIVE FOLLOW-UP] Overlap alone isn't necessarily a defect -- reports duration/ratio, advisory by nature.",
+    "ser_emotion": "Objective classifier, but acted-emotion SER is noisier than human inter-rater agreement (IEMOCAP kappa ~0.3-0.5) -- can't gate.",
+    "emotion_appropriateness_mm": "Multimodal judge that hears real audio and context, but LLM judges drift and are noisy -- always advisory, never promoted.",
+    "naturalness_mos": "[BEYOND-SCOPE ADDITION] Non-intrusive MOS saturates above ~4 and can't separate 'good' from 'excellent' -- always advisory.",
 }
 
 

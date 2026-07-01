@@ -2,15 +2,26 @@
 fixture set" a human "would actually circulate internally" -- JSON alone
 isn't that). Pure function over an already-built `Report` + the gate-vs-
 advisory breakdown list -- no file I/O here, so it's directly testable;
-`eval_system/run.py` writes the returned string to `out/report_<n>.md`.
+`eval_system/run.py` writes the returned string to `out/report.md`.
 
 Structure (a reviewer who hasn't seen the codebase should be able to follow
-this top to bottom): top-line verdict -> per-call summary table -> per-call
-details (every MetricScore, grouped semantic/acoustic, gate failures
-highlighted) -> acoustic measured values (the actual numbers, not just
-policy) -> faithfulness findings -> headline metric -> emotion cross-check
--> aggregate (totals, per-metric pass/fail/error, judge coverage) -> the
-gate-vs-advisory rationale table."""
+this top to bottom, and skim the whole thing in under a minute): top-line
+verdict -> per-call summary table -> per-call details (every MetricScore,
+grouped semantic/acoustic, gate failures highlighted) -> headline metric ->
+emotion cross-check -> aggregate (totals, per-metric pass/fail/error, judge
+coverage) -> the gate-vs-advisory rationale table.
+
+Deliberately terse: the extra numbers that used to live in a separate
+"Acoustic measured values" block (barge-in time-to-yield, turn-taking
+percentiles, F0/rate, first-token latency) are folded into the per-call
+metrics table's Reason column instead of duplicated in prose; a standalone
+"Faithfulness judge findings" section was similarly folded into that
+metric's own table row (verdict + score are already separate columns;
+Reason carries the claim count + rationale, truncated like any other judge
+free-text). `emotional_appropriateness` is dropped from the per-call table
+entirely -- it duplicates the two-proxy emotion signal already tracked
+per call (`ser_emotion` + `emotion_appropriateness_mm`) -- but still rolls
+up in the Aggregate section like every other metric."""
 from __future__ import annotations
 
 import re
@@ -44,9 +55,30 @@ def _fmt_score(score: float | None) -> str:
 def _single_line(text: str, max_len: int = 160) -> str:
     """Collapses embedded newlines/markdown list syntax (real LLM judge
     responses are often multi-line) into one line BEFORE truncating, so a
-    table cell never gets corrupted by a raw multi-line string."""
+    table cell never gets corrupted by a raw multi-line string. Truncation
+    cuts at the last word boundary (never mid-word) and marks it with an
+    ellipsis; full text is never available in Markdown (no tooltip/details
+    mechanism there), so this is deliberately terser than html_report.py's
+    truncate-with-tooltip-and-overflow-details treatment of the same text."""
     collapsed = re.sub(r"\s+", " ", text).strip()
-    return collapsed[:max_len]
+    if len(collapsed) <= max_len:
+        return collapsed
+    cut = collapsed[:max_len]
+    last_space = cut.rfind(" ")
+    if last_space > 0:
+        cut = cut[:last_space]
+    return cut.rstrip() + "…"
+
+
+def _compress_error(exc: str, max_len: int) -> str:
+    """A raw evaluator exception (a Gemini 429 quota payload can run to a
+    thousand characters of nested JSON) is never useful inline -- the quota
+    case is common enough on repeated CI runs to get its own fixed, short
+    message; anything else is truncated like any other free-text reason."""
+    lowered = exc.lower()
+    if "429" in exc or "resource_exhausted" in lowered or "quota" in lowered:
+        return "ERROR — quota exceeded (429)"
+    return _single_line(f"ERROR — {exc}", max_len)
 
 
 def _one_line_reason(score: MetricScore, max_len: int = 160) -> str:
@@ -60,7 +92,7 @@ def _one_line_reason(score: MetricScore, max_len: int = 160) -> str:
     if score.status is Status.SKIPPED:
         return d.get("reason", "skipped")
     if score.status is Status.ERROR:
-        return _single_line(f"evaluator error: {d.get('exc', 'unknown')}", max_len)
+        return _compress_error(str(d.get("exc", "unknown")), max_len)
 
     metric = score.metric
     if metric == "task_success":
@@ -83,18 +115,36 @@ def _one_line_reason(score: MetricScore, max_len: int = 160) -> str:
         return _single_line(d.get("notes") or "", max_len) or "no notes"
     if metric == "faithfulness":
         claims = d.get("ungrounded_claims", [])
-        return f"{len(claims)} ungrounded claim(s)" if claims else "grounded"
+        count_str = f"{len(claims)} ungrounded claim(s)" if claims else "grounded"
+        rationale = d.get("rationale", "")
+        return _single_line(f"{count_str} — {rationale}", max_len) if rationale else count_str
     if metric == "barge_in":
-        n = d.get("issue_count", 0)
-        return f"{n} issue(s)" if n else "no barge-in issues"
+        barge_ins = d.get("barge_ins", [])
+        if not barge_ins:
+            return "no barge-in issues"
+        parts = []
+        for b in barge_ins:
+            flag = " FAIL" if b.get("fail_to_yield") else (" FALSE-YIELD" if b.get("false_yield") else "")
+            parts.append(f"{b['time_to_yield'] * 1000:.0f}ms{flag}")
+        return _single_line(f"{len(barge_ins)} event(s): " + ", ".join(parts), max_len)
     if metric == "turn_taking_latency":
-        return f"p50={d['p50'] * 1000:.0f} ms (n={d.get('n')})" if "p50" in d else d.get("reason", "n/a")
+        return (
+            f"p50={d['p50'] * 1000:.0f}ms p90={d['p90'] * 1000:.0f}ms p99={d['p99'] * 1000:.0f}ms (n={d.get('n')})"
+            if "p50" in d else d.get("reason", "n/a")
+        )
     if metric == "latency_thresholds":
         v = d.get("violations", [])
+        if "first_token_latency_sec" in d:
+            return f"FTL={d['first_token_latency_sec'] * 1000:.0f}ms, {len(v)} violation(s)"
         return f"{len(v)} threshold violation(s)" if v else "within threshold"
     if metric == "pitch_prosody":
         issues = d.get("issues", [])
-        return ", ".join(issues) if issues else "no issues"
+        issue_str = ", ".join(issues) if issues else "no issues"
+        if d.get("pitch_mean_hz") is not None:
+            rate = d.get("speech_rate_wps")
+            rate_str = f"{rate * 60:.0f}wpm" if rate is not None else "n/a"
+            return _single_line(f"F0={d['pitch_mean_hz']:.0f}Hz(±{d['pitch_range_hz']:.0f}) rate={rate_str}; {issue_str}", max_len)
+        return issue_str
     if metric == "entity_intelligibility":
         missing = d.get("missing_entities", [])
         return f"missing: {', '.join(missing)}" if missing else "all critical entities survived STT"
@@ -117,12 +167,22 @@ def _metrics_table(scores: list[MetricScore]) -> list[str]:
         status_cell = s.status.value.upper()
         if s.status in (Status.FAIL, Status.ERROR) and s.gating is Gating.GATE:
             status_cell = f"**{status_cell} ⚠️ GATE**"
-        lines.append(f"| {s.metric} | {status_cell} | {_fmt_score(s.score)} | {_one_line_reason(s)} |")
+        lines.append(f"| {s.metric} | {status_cell} | {_fmt_score(s.score)} | {_one_line_reason(s, max_len=80)} |")
     return lines
+
+
+# Dropped from the per-call breakdown table: emotional_appropriateness is a
+# text-only judge over a prosody summary that duplicates the two tracked
+# emotion proxies (ser_emotion + emotion_appropriateness_mm) already shown
+# per call for the disagreement signal -- still visible in the Aggregate
+# section's per-metric rollup, just not repeated as a fourth emotion row
+# on every call.
+PER_CALL_TABLE_EXCLUDE = {"emotional_appropriateness"}
 
 
 def _per_call_details(scores: list[MetricScore]) -> list[str]:
     lines: list[str] = []
+    scores = [s for s in scores if s.metric not in PER_CALL_TABLE_EXCLUDE]
     semantic = [s for s in scores if s.metric in SEMANTIC_METRICS]
     acoustic = [s for s in scores if s.metric in ACOUSTIC_METRICS]
     other = [s for s in scores if s.metric not in SEMANTIC_METRICS and s.metric not in ACOUSTIC_METRICS]
@@ -142,109 +202,6 @@ def _per_call_details(scores: list[MetricScore]) -> list[str]:
         lines.append("")
         lines.extend(_metrics_table(other))
         lines.append("")
-    return lines
-
-
-def _acoustic_measured_values(scores_by_metric: dict[str, MetricScore]) -> list[str]:
-    lines: list[str] = ["#### Acoustic measured values", ""]
-
-    if "barge_in" in scores_by_metric:
-        d = scores_by_metric["barge_in"].details
-        barge_ins = d.get("barge_ins", [])
-        lines.append("**barge_in** (headline) -- time-to-yield per detected event:")
-        if not barge_ins:
-            lines.append("- no barge-in events detected in this call")
-        for b in barge_ins:
-            flags = []
-            if b["fail_to_yield"]:
-                flags.append("FAIL-TO-YIELD")
-            if b["false_yield"]:
-                flags.append("FALSE-YIELD")
-            flag_str = f" — **{', '.join(flags)}**" if flags else ""
-            lines.append(f"- onset {b['t_onset']:.2f}s → time-to-yield {b['time_to_yield'] * 1000:.0f} ms{flag_str}")
-        lines.append("")
-
-    if "turn_taking_latency" in scores_by_metric:
-        d = scores_by_metric["turn_taking_latency"].details
-        if "p50" in d:
-            lines.append(
-                f"**turn_taking_latency**: p50={d['p50'] * 1000:.0f} ms, p90={d['p90'] * 1000:.0f} ms, "
-                f"p99={d['p99'] * 1000:.0f} ms (n={d['n']} gap(s); distribution, not just a mean)"
-            )
-        else:
-            lines.append(f"**turn_taking_latency**: {d.get('reason', 'no data')}")
-        lines.append("")
-
-    if "pitch_prosody" in scores_by_metric:
-        d = scores_by_metric["pitch_prosody"].details
-        if d.get("pitch_mean_hz") is not None:
-            rate = d.get("speech_rate_wps")
-            rate_str = f"{rate * 60:.0f} words/min" if rate is not None else "n/a"
-            lines.append(
-                f"**pitch_prosody**: F0 mean={d['pitch_mean_hz']:.0f} Hz, range={d['pitch_range_hz']:.0f} Hz, "
-                f"speech rate={rate_str}, flags: {', '.join(d.get('issues', [])) or 'none'}"
-            )
-        else:
-            lines.append(f"**pitch_prosody**: {d.get('reason', 'no data')}")
-        lines.append("")
-
-    if "latency_thresholds" in scores_by_metric:
-        d = scores_by_metric["latency_thresholds"].details
-        if "first_token_latency_sec" in d:
-            lines.append(
-                f"**latency_thresholds**: first-token latency={d['first_token_latency_sec'] * 1000:.0f} ms, "
-                f"{len(d['violations'])} violation(s) vs {d['threshold_sec']:.1f}s threshold"
-            )
-        else:
-            lines.append(f"**latency_thresholds**: {d.get('reason', 'no data')}")
-        lines.append("")
-
-    if "entity_intelligibility" in scores_by_metric:
-        d = scores_by_metric["entity_intelligibility"].details
-        locations = d.get("critical_entity_locations")
-        if locations:
-            lines.append(f"**entity_intelligibility**: critical entities checked (WER {d.get('wer_band', 'n/a')}):")
-            lines.append("")
-            lines.append("| Entity | Survived | Timestamp |")
-            lines.append("|---|---|---|")
-            for loc in locations:
-                survived = "yes" if loc["found"] else "**NO**"
-                ts = f"{loc['start']:.2f}–{loc['end']:.2f}s" if loc.get("found") else "n/a"
-                lines.append(f"| {loc['entity']} | {survived} | {ts} |")
-        else:
-            lines.append(f"**entity_intelligibility**: {d.get('reason', 'no critical entities defined for this call')}")
-        lines.append("")
-
-    return lines
-
-
-def _faithfulness_findings(scores_by_metric: dict[str, MetricScore]) -> list[str]:
-    lines: list[str] = ["#### Faithfulness judge findings", ""]
-    s = scores_by_metric.get("faithfulness")
-    if s is None:
-        lines.append("faithfulness did not run for this call.")
-        lines.append("")
-        return lines
-
-    if s.status is Status.ERROR:
-        lines.append(f"faithfulness judge **ERRORED**: {s.details.get('exc', 'unknown error')}")
-        lines.append("")
-        return lines
-    if s.status is Status.SKIPPED:
-        lines.append("faithfulness judge skipped for this call.")
-        lines.append("")
-        return lines
-
-    lines.append(f"Verdict: **{s.status.value.upper()}** (score={_fmt_score(s.score)})")
-    lines.append("")
-    lines.append(f"Rationale: {s.details.get('rationale', 'n/a')}")
-    claims = s.details.get("ungrounded_claims", [])
-    if claims:
-        lines.append("")
-        lines.append("Potentially hallucinated content (call-level finding -- this judge isn't turn-indexed):")
-        for c in claims:
-            lines.append(f"- {c}")
-    lines.append("")
     return lines
 
 
@@ -334,12 +291,9 @@ def render_markdown_report(report: Report, gate_breakdown: list[dict[str, Any]])
     lines.append("")
     for call_id in sorted(report.per_call):
         scores = report.per_call[call_id]["scores"]
-        scores_by_metric = {s.metric: s for s in scores}
         lines.append(f"### {call_id} — {'SHIP' if report.per_call[call_id]['verdict'].ship else 'HOLD'}")
         lines.append("")
         lines.extend(_per_call_details(scores))
-        lines.extend(_acoustic_measured_values(scores_by_metric))
-        lines.extend(_faithfulness_findings(scores_by_metric))
 
     lines.append(f"## Headline metric: `{HEADLINE_METRIC}`")
     lines.append("")

@@ -24,10 +24,18 @@ writing this:
   next cell -- `word-break: break-all` on `td`/`th` forces a wrap.
 
 Long free-text (judge rationale/notes) that would otherwise blow out a
-narrow table cell is truncated to ~140 chars with a `title=` tooltip holding
-the full text, and every truncated value is also listed in full in a
-trailing `<details>` block below its table -- both mechanisms, not just one,
-since a PDF reader can't hover for a tooltip the way a browser can."""
+narrow table cell is truncated to ~80 chars at a word boundary with a
+`title=` tooltip holding the full text, and every truncated value is also
+listed in full in a trailing `<details>` block below its table -- both
+mechanisms, not just one, since a PDF reader can't hover for a tooltip the
+way a browser can.
+
+Deliberately terse (mirrors markdown_report.py's structure exactly, same
+reasoning): no standalone "Acoustic measured values" or "Faithfulness judge
+findings" sections -- both folded into the per-call metrics table's Reason
+column via the shared `_one_line_reason()`. `emotional_appropriateness` is
+dropped from the per-call table (still in Aggregate) since it duplicates
+the two-proxy emotion signal already tracked per call."""
 from __future__ import annotations
 
 import html as _html
@@ -38,11 +46,18 @@ from eval_system.report.combine import Report, compute_ship_verdict
 from eval_system.report.markdown_report import (
     ACOUSTIC_METRICS,
     HEADLINE_METRIC,
+    PER_CALL_TABLE_EXCLUDE,
     SEMANTIC_METRICS,
     _one_line_reason,
 )
 
-REASON_MAX_LEN = 140
+REASON_MAX_LEN = 80
+# The gate-vs-advisory table's Rationale column is 68% wide (vs. 45% for the
+# per-call metrics table) and, since gate.py's GATE_RATIONALE strings are
+# already trimmed to one crisp sentence, most fit without truncating at all
+# at this wider cap -- the 80-char cap is specifically for judge free-text
+# in the per-call table, not this column.
+GATE_RATIONALE_MAX_LEN = 140
 # xhtml2pdf's layout engine corrupts a row's column boundaries when a title=
 # attribute value is very long (verified empirically: ~1500 chars breaks it,
 # ~900 is safe) -- capped well under that; the full text still lives in the
@@ -104,7 +119,11 @@ def _breakable_metric_name(metric: str) -> str:
 def _truncate(text: str, max_len: int = REASON_MAX_LEN) -> tuple[str, bool]:
     if len(text) <= max_len:
         return text, False
-    return text[:max_len].rstrip() + "…", True
+    cut = text[:max_len]
+    last_space = cut.rfind(" ")
+    if last_space > 0:
+        cut = cut[:last_space]
+    return cut.rstrip() + "…", True
 
 
 def _fmt_score(score: float | None) -> str:
@@ -157,6 +176,7 @@ def _metrics_table_html(scores: list[MetricScore]) -> str:
 
 def _per_call_details_html(scores: list[MetricScore]) -> str:
     parts: list[str] = []
+    scores = [s for s in scores if s.metric not in PER_CALL_TABLE_EXCLUDE]
     semantic = [s for s in scores if s.metric in SEMANTIC_METRICS]
     acoustic = [s for s in scores if s.metric in ACOUSTIC_METRICS]
     other = [s for s in scores if s.metric not in SEMANTIC_METRICS and s.metric not in ACOUSTIC_METRICS]
@@ -170,115 +190,6 @@ def _per_call_details_html(scores: list[MetricScore]) -> str:
     if other:
         parts.append("<h4>Other metrics</h4>")
         parts.append(_metrics_table_html(other))
-    return "".join(parts)
-
-
-def _acoustic_measured_values_html(scores_by_metric: dict[str, MetricScore]) -> str:
-    parts: list[str] = ["<h4>Acoustic measured values</h4>"]
-
-    if "barge_in" in scores_by_metric:
-        d = scores_by_metric["barge_in"].details
-        barge_ins = d.get("barge_ins", [])
-        parts.append("<p><strong>barge_in</strong> (headline) — time-to-yield per detected event:</p><ul>")
-        if not barge_ins:
-            parts.append("<li>no barge-in events detected in this call</li>")
-        for b in barge_ins:
-            flags = []
-            if b["fail_to_yield"]:
-                flags.append("FAIL-TO-YIELD")
-            if b["false_yield"]:
-                flags.append("FALSE-YIELD")
-            flag_str = f" — <strong>{_esc(', '.join(flags))}</strong>" if flags else ""
-            parts.append(
-                f"<li>onset {b['t_onset']:.2f}s → time-to-yield {b['time_to_yield'] * 1000:.0f} ms{flag_str}</li>"
-            )
-        parts.append("</ul>")
-
-    if "turn_taking_latency" in scores_by_metric:
-        d = scores_by_metric["turn_taking_latency"].details
-        if "p50" in d:
-            parts.append(
-                f"<p><strong>turn_taking_latency</strong>: p50={d['p50'] * 1000:.0f} ms, "
-                f"p90={d['p90'] * 1000:.0f} ms, p99={d['p99'] * 1000:.0f} ms "
-                f"(n={d['n']} gap(s); distribution, not just a mean)</p>"
-            )
-        else:
-            parts.append(f"<p><strong>turn_taking_latency</strong>: {_esc(d.get('reason', 'no data'))}</p>")
-
-    if "pitch_prosody" in scores_by_metric:
-        d = scores_by_metric["pitch_prosody"].details
-        if d.get("pitch_mean_hz") is not None:
-            rate = d.get("speech_rate_wps")
-            rate_str = f"{rate * 60:.0f} words/min" if rate is not None else "n/a"
-            flags = ", ".join(d.get("issues", [])) or "none"
-            parts.append(
-                f"<p><strong>pitch_prosody</strong>: F0 mean={d['pitch_mean_hz']:.0f} Hz, "
-                f"range={d['pitch_range_hz']:.0f} Hz, speech rate={rate_str}, flags: {_esc(flags)}</p>"
-            )
-        else:
-            parts.append(f"<p><strong>pitch_prosody</strong>: {_esc(d.get('reason', 'no data'))}</p>")
-
-    if "latency_thresholds" in scores_by_metric:
-        d = scores_by_metric["latency_thresholds"].details
-        if "first_token_latency_sec" in d:
-            parts.append(
-                f"<p><strong>latency_thresholds</strong>: first-token latency="
-                f"{d['first_token_latency_sec'] * 1000:.0f} ms, {len(d['violations'])} violation(s) "
-                f"vs {d['threshold_sec']:.1f}s threshold</p>"
-            )
-        else:
-            parts.append(f"<p><strong>latency_thresholds</strong>: {_esc(d.get('reason', 'no data'))}</p>")
-
-    if "entity_intelligibility" in scores_by_metric:
-        d = scores_by_metric["entity_intelligibility"].details
-        locations = d.get("critical_entity_locations")
-        if locations:
-            parts.append(
-                f"<p><strong>entity_intelligibility</strong>: critical entities checked "
-                f"(WER {_esc(d.get('wer_band', 'n/a'))}):</p>"
-            )
-            parts.append(
-                '<table><colgroup><col style="width:50%"><col style="width:20%">'
-                '<col style="width:30%"></colgroup>'
-                "<tr><th>Entity</th><th>Survived</th><th>Timestamp</th></tr>"
-            )
-            for i, loc in enumerate(locations):
-                survived = "yes" if loc["found"] else "<strong>NO</strong>"
-                ts = f"{loc['start']:.2f}–{loc['end']:.2f}s" if loc.get("found") else "n/a"
-                row_style = f' style="{ZEBRA_STYLE}"' if i % 2 == 1 else ""
-                parts.append(f"<tr{row_style}><td>{_esc(loc['entity'])}</td><td>{survived}</td><td>{ts}</td></tr>")
-            parts.append("</table>")
-        else:
-            parts.append(
-                f"<p><strong>entity_intelligibility</strong>: "
-                f"{_esc(d.get('reason', 'no critical entities defined for this call'))}</p>"
-            )
-
-    return "".join(parts)
-
-
-def _faithfulness_findings_html(scores_by_metric: dict[str, MetricScore]) -> str:
-    parts: list[str] = ["<h4>Faithfulness judge findings</h4>"]
-    s = scores_by_metric.get("faithfulness")
-    if s is None:
-        parts.append("<p>faithfulness did not run for this call.</p>")
-        return "".join(parts)
-
-    if s.status is Status.ERROR:
-        parts.append(f"<p><strong>ERRORED</strong>: {_esc(s.details.get('exc', 'unknown error'))}</p>")
-        return "".join(parts)
-    if s.status is Status.SKIPPED:
-        parts.append("<p>faithfulness judge skipped for this call.</p>")
-        return "".join(parts)
-
-    parts.append(f"<p>Verdict: <strong>{s.status.value.upper()}</strong> (score={_fmt_score(s.score)})</p>")
-    parts.append(f"<p>Rationale: {_esc(s.details.get('rationale', 'n/a'))}</p>")
-    claims = s.details.get("ungrounded_claims", [])
-    if claims:
-        parts.append("<p>Potentially hallucinated content (call-level finding -- not turn-indexed):</p><ul>")
-        for c in claims:
-            parts.append(f"<li>{_esc(c)}</li>")
-        parts.append("</ul>")
     return "".join(parts)
 
 
@@ -399,7 +310,7 @@ def _gate_advisory_table_html(gate_breakdown: list[dict[str, Any]]) -> str:
     rows = []
     for i, row in enumerate(gate_breakdown):
         rationale = row["rationale"]
-        shown, truncated = _truncate(rationale)
+        shown, truncated = _truncate(rationale, max_len=GATE_RATIONALE_MAX_LEN)
         title_attr = f' title="{_esc(rationale[:TITLE_MAX_LEN])}"' if truncated else ""
         if truncated:
             overflow.append((row["metric"], rationale))
@@ -445,12 +356,9 @@ def render_html_report(report: Report, gate_breakdown: list[dict[str, Any]]) -> 
     body.append("<h2>Per-call details</h2>")
     for call_id in sorted(report.per_call):
         scores = report.per_call[call_id]["scores"]
-        scores_by_metric = {s.metric: s for s in scores}
         verdict_word = "SHIP" if report.per_call[call_id]["verdict"].ship else "HOLD"
         body.append(f"<h3>{_esc(call_id)} — {verdict_word}</h3>")
         body.append(_per_call_details_html(scores))
-        body.append(_acoustic_measured_values_html(scores_by_metric))
-        body.append(_faithfulness_findings_html(scores_by_metric))
 
     body.append(f"<h2>Headline metric: <code>{_esc(HEADLINE_METRIC)}</code></h2>")
     body.append(

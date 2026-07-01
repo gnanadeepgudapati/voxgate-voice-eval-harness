@@ -232,7 +232,9 @@ def test_acoustic_measured_values_shows_latency_thresholds_first_token_latency()
     assert "300" in md  # first-token latency in ms
 
 
-def test_acoustic_measured_values_shows_entity_intelligibility_per_entity_table():
+def test_entity_intelligibility_reason_lists_only_failed_entities():
+    # Only entities that FAILED to survive STT are worth calling out inline --
+    # a full survived/failed table for every entity was dropped as noise.
     report = _report({
         "call-1": [_score("call-1", "entity_intelligibility", MetricKind.SIGNAL, Status.FAIL, Gating.GATE, score=0.0,
                            details={"missing_entities": ["Lee"], "wer": 0.2, "wer_band": "poor",
@@ -246,7 +248,7 @@ def test_acoustic_measured_values_shows_entity_intelligibility_per_entity_table(
     md = render_markdown_report(report, GATE_BREAKDOWN)
 
     assert "Lee" in md
-    assert "Tuesday" in md
+    assert "Tuesday" not in md
 
 
 def test_acoustic_measured_values_shows_barge_in_time_to_yield_in_ms():
@@ -265,6 +267,8 @@ def test_acoustic_measured_values_shows_barge_in_time_to_yield_in_ms():
 # --- Gap 3: faithfulness findings ---
 
 def test_faithfulness_findings_shown_with_ungrounded_claims():
+    # Individual claim TEXT is no longer listed inline -- just a count plus
+    # the rationale -- both already available directly on the table row.
     report = _report({
         "call-1": [_score("call-1", "faithfulness", MetricKind.JUDGE, Status.FAIL, Gating.ADVISORY, score=0.2,
                            details={"ungrounded_claims": ["agent claimed a discount not in tool results"],
@@ -273,7 +277,7 @@ def test_faithfulness_findings_shown_with_ungrounded_claims():
 
     md = render_markdown_report(report, GATE_BREAKDOWN)
 
-    assert "agent claimed a discount not in tool results" in md
+    assert "1 ungrounded claim(s)" in md
     assert "found one hallucinated claim" in md
 
 
@@ -288,12 +292,31 @@ def test_faithfulness_findings_shown_when_grounded():
     assert "all claims grounded" in md
 
 
-def test_faithfulness_findings_note_when_not_run():
-    report = _report({"call-1": [_score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE)]})
+def test_acoustic_measured_values_section_removed():
+    # The standalone "Acoustic measured values" block duplicated numbers the
+    # per-call metrics table already reports (once enriched) -- it's gone;
+    # the table row is the only place these numbers live now.
+    report = _report({
+        "call-1": [_score("call-1", "pitch_prosody", MetricKind.SIGNAL, Status.PASS, Gating.ADVISORY,
+                           details={"pitch_mean_hz": 150.0, "pitch_range_hz": 80.0, "issues": []})],
+    })
 
     md = render_markdown_report(report, GATE_BREAKDOWN)
 
-    assert "did not run" in md.lower() or "not run" in md.lower()
+    assert "Acoustic measured values" not in md
+
+
+def test_faithfulness_findings_heading_removed():
+    # The standalone "Faithfulness judge findings" prose block is gone --
+    # the per-call metrics table's faithfulness row carries the summary.
+    report = _report({
+        "call-1": [_score("call-1", "faithfulness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY,
+                           details={"ungrounded_claims": [], "rationale": "all claims grounded"})],
+    })
+
+    md = render_markdown_report(report, GATE_BREAKDOWN)
+
+    assert "Faithfulness judge findings" not in md
 
 
 # --- Gap 4: expanded aggregate section ---
@@ -369,3 +392,94 @@ def test_aggregate_section_placed_after_per_call_results():
     md = render_markdown_report(report, GATE_BREAKDOWN)
 
     assert md.index("## Per-call results") < md.index("## Aggregate")
+
+
+# --- Conciseness pass: terser per-call rendering ---
+
+def test_emotional_appropriateness_dropped_from_per_call_table():
+    # Two-proxy emotion attack already tracks ser_emotion + emotion_appropriateness_mm
+    # per call -- the legacy text-only emotional_appropriateness judge duplicates that
+    # signal in the per-call breakdown, so it's dropped there (still visible in Aggregate).
+    report = _report({
+        "call-1": [
+            _score("call-1", "task_success", MetricKind.DETERMINISTIC, Status.PASS, Gating.GATE),
+            _score("call-1", "emotional_appropriateness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY,
+                   details={"notes": "calm and appropriate tone throughout"}),
+        ],
+    })
+
+    md = render_markdown_report(report, GATE_BREAKDOWN)
+
+    per_call_section = md.split("## Headline metric")[0]
+    assert "emotional_appropriateness" not in per_call_section
+
+
+def test_emotional_appropriateness_still_in_aggregate_section():
+    report = _report({
+        "call-1": [_score("call-1", "emotional_appropriateness", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY)],
+    })
+
+    md = render_markdown_report(report, GATE_BREAKDOWN)
+
+    aggregate_section = md.split("## Aggregate")[1]
+    assert "emotional_appropriateness" in aggregate_section
+
+
+def test_error_reason_compressed_for_quota_exhaustion():
+    long_payload = "ClientError(\"429 RESOURCE_EXHAUSTED. " + "{'error': " + "'x' * 50}" + "\")"
+    score = _score("call-1", "emotion_appropriateness_mm", MetricKind.JUDGE, Status.ERROR, Gating.ADVISORY,
+                    score=None, details={"exc": long_payload})
+
+    reason = _one_line_reason(score)
+
+    assert reason == "ERROR — quota exceeded (429)"
+
+
+def test_error_reason_compressed_for_generic_failure():
+    score = _score("call-1", "faithfulness", MetricKind.JUDGE, Status.ERROR, Gating.ADVISORY,
+                    score=None, details={"exc": "ValueError('bad json from model')"})
+
+    reason = _one_line_reason(score)
+
+    assert reason.startswith("ERROR — ")
+    assert "ValueError" in reason
+    assert len(reason) <= 90  # short, not the raw multi-hundred-char payload
+
+
+def test_judge_reason_truncated_at_word_boundary_around_80_chars():
+    notes = "word " * 40  # 200 chars, all real word-boundary spaces
+    score = _score("call-1", "instruction_adherence_judge", MetricKind.JUDGE, Status.PASS, Gating.ADVISORY,
+                   details={"notes": notes})
+
+    reason = _one_line_reason(score, max_len=80)
+
+    assert len(reason) <= 81  # 80 + ellipsis char
+    assert reason.endswith("…")
+    assert not reason[:-1].endswith(" ")  # no dangling space before the ellipsis
+    assert "word" == reason.rstrip("…").strip().split(" ")[-1]  # cut lands on a whole word
+
+
+def test_faithfulness_reason_folds_rationale_with_claim_count():
+    score = _score("call-1", "faithfulness", MetricKind.JUDGE, Status.FAIL, Gating.ADVISORY, score=0.6,
+                    details={"ungrounded_claims": ["a", "b", "c"], "rationale": "three claims not in tool results"})
+
+    reason = _one_line_reason(score)
+
+    assert "3 ungrounded claim(s)" in reason
+    assert "three claims not in tool results" in reason
+
+
+def test_barge_in_reason_includes_per_event_time_to_yield():
+    score = _score("call-1", "barge_in", MetricKind.SIGNAL, Status.FAIL, Gating.GATE, score=0.5, details={
+        "barge_ins": [
+            {"t_onset": 4.2, "time_to_yield": 0.35, "false_yield": False, "fail_to_yield": False},
+            {"t_onset": 8.4, "time_to_yield": 0.98, "false_yield": False, "fail_to_yield": True},
+        ],
+        "issue_count": 1,
+    })
+
+    reason = _one_line_reason(score)
+
+    assert "350" in reason
+    assert "980" in reason
+    assert "FAIL" in reason
