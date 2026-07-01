@@ -67,10 +67,10 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [x] Test: low-kappa judge must NOT be able to hard-gate (degenerate/chance-level data → `trusted=False`)
 
 ## Phase 7 — Gating + report
-- [ ] `gating/gate.py` — two-tier; hard-gate deterministic+trusted; pass^k; tail thresholds
-- [ ] `report/combine.py` — per-call + aggregate + det/judge/error-rate/agreement split; upsert on key
-- [ ] Test: flaky judge cannot fail a good deploy; C1(2) re-run overwrites not duplicates
-- [ ] Test: semantic + acoustic emit identical MetricScore schema into one report
+- [x] `gating/gate.py` — two-tier; hard-gate deterministic+trusted; pass^k; tail thresholds; `gate_advisory_breakdown()` (DoD rationale list)
+- [x] `report/combine.py` — per-call + aggregate + det/judge/error-rate/agreement split; upsert on key
+- [x] Test: flaky judge cannot fail a good deploy; C1(2) re-run overwrites not duplicates
+- [x] Test: semantic + acoustic emit identical MetricScore schema into one report (via shared `evaluate_gate`/`build_report`)
 
 ## Phase 8 — Validators, sampling, monitoring
 - [ ] `validators/` — preflight (channels, timeline parse, no clipping) + retry→quarantine (C1(4))
