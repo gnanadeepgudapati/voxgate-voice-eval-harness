@@ -5,12 +5,13 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**Phase 4 — Semantic suite.** Phases 1-3 complete + deterministic metrics done,
-27/27 tests passing. `task_success` (final-tool + result_contains check) and
-`tool_call_ordering` (subsequence order check + never_zero_appointments state
-reducer — catches the reschedule trap) both registered and tested against real
-fixtures. Next: `instruction_adherence` (deterministic rule + judge stub), then
-`faithfulness` (LLM judge).
+**Phase 5 — Acoustic suite.** Phases 1-4 complete, 39/39 tests passing. Semantic
+suite (Suite A) fully built: `task_success`, `tool_call_ordering` (catches the
+reschedule trap), `instruction_adherence_rule` + `instruction_adherence_judge`,
+`faithfulness`. Judge metrics depend on `eval_system/judges/client.py`'s
+`JudgeClient` protocol (constructor-injected, lazily defaults to
+`AnthropicJudgeClient`), so tests use a fake client — no network/API key needed
+to run the suite. Next: `barge_in` (headline acoustic metric).
 
 ---
 
@@ -45,10 +46,10 @@ fixtures. Next: `instruction_adherence` (deterministic rule + judge stub), then
 - [x] `metrics/semantic/task_success.py` — deterministic (final DB state vs expected)
 - [x] `metrics/semantic/tool_call_ordering.py` — deterministic reducer + reschedule-trap invariant
 - [x] Test: reschedule_trap mid-sequence failure → "never zero appointments" fires (intermediate state)
-- [ ] `metrics/semantic/instruction_adherence.py` — deterministic rule (gate) + judge stub (advisory)
-- [ ] `metrics/semantic/faithfulness.py` — LLM judge (advisory; reads asr_confidence)
+- [x] `metrics/semantic/instruction_adherence.py` — deterministic rule (gate) + judge (advisory), two classes
+- [x] `metrics/semantic/faithfulness.py` — LLM judge (advisory; reads asr_confidence)
 - [x] Test: task_success / ordering pass+fail cases
-- [ ] Test: faithfulness judge structured-output shape
+- [x] Test: faithfulness judge structured-output shape (via `JudgeClient` protocol + fake in tests)
 
 ## Phase 5 — Acoustic suite (barge_in first — headline)
 - [ ] `metrics/acoustic/barge_in.py` — 2-ch VAD + markers → time-to-yield; fail-to-yield & false-yield
