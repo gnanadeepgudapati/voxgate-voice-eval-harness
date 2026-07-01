@@ -130,3 +130,53 @@ def test_judge_metrics_run_after_deterministic_and_respect_sampler():
     scores = registry.run(make_ctx())  # no sampler -> full coverage
     assert order == ["det", "judge"]
     assert len(scores) == 2
+
+
+def test_metrics_filter_restricts_which_metrics_execute():
+    executed: list[str] = []
+
+    @registry.register
+    class A(BaseMetric):
+        name = "a"
+        version = "1"
+        kind = MetricKind.DETERMINISTIC
+        default_gating = Gating.GATE
+        requires_ground_truth = False
+
+        def compute(self, ctx):
+            executed.append(self.name)
+            return MetricScore(ctx.call_id, self.name, self.kind, Status.PASS, self.default_gating, 1.0)
+
+    @registry.register
+    class B(BaseMetric):
+        name = "b"
+        version = "1"
+        kind = MetricKind.DETERMINISTIC
+        default_gating = Gating.GATE
+        requires_ground_truth = False
+
+        def compute(self, ctx):
+            executed.append(self.name)
+            return MetricScore(ctx.call_id, self.name, self.kind, Status.PASS, self.default_gating, 1.0)
+
+    scores = registry.run(make_ctx(), metrics_filter={"a"})
+
+    assert executed == ["a"]
+    assert [s.metric for s in scores] == ["a"]
+
+
+def test_metrics_filter_none_runs_everything_same_as_before():
+    @registry.register
+    class C(BaseMetric):
+        name = "c"
+        version = "1"
+        kind = MetricKind.DETERMINISTIC
+        default_gating = Gating.GATE
+        requires_ground_truth = False
+
+        def compute(self, ctx):
+            return MetricScore(ctx.call_id, self.name, self.kind, Status.PASS, self.default_gating, 1.0)
+
+    scores = registry.run(make_ctx(), metrics_filter=None)
+
+    assert [s.metric for s in scores] == ["c"]
