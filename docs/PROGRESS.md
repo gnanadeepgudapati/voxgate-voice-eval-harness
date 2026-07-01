@@ -56,10 +56,10 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [x] Test: synthetic overlap → correct time-to-yield; injected cough → flagged false yield, not a yield
 - [x] `metrics/acoustic/turn_taking_latency.py` — gap distribution p50/p90/p99 (not just mean)
 - [x] `metrics/acoustic/latency_thresholds.py` — deterministic FTL + silence, advisory (C1(7))
-- [ ] `metrics/acoustic/pitch_prosody.py` — F0 contour (range/monotone) + speech rate
-- [ ] `metrics/acoustic/entity_intelligibility.py` — round-trip STT (faster-whisper) + WER (jiwer) on critical entities
-- [ ] `metrics/acoustic/emotional_appropriateness.py` — multimodal judge, always advisory
-- [ ] Test: turn_taking distribution; latency advisory does not move gate (C1(7)); entity WER on critical tokens
+- [x] `metrics/acoustic/pitch_prosody.py` — F0 contour (range/monotone) + speech rate
+- [x] `metrics/acoustic/entity_intelligibility.py` — round-trip STT (faster-whisper) + WER (jiwer) on critical entities
+- [x] `metrics/acoustic/emotional_appropriateness.py` — text judge over transcript + prosody summary (no multimodal-audio client wired), always advisory
+- [x] Test: turn_taking distribution; latency advisory does not move gate (C1(7)); entity WER on critical tokens
 
 ## Phase 6 — Calibration
 - [ ] `calibration/judge_agreement.py` — Cohen's kappa vs small human set → trust tier
