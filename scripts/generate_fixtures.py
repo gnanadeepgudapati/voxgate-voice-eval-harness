@@ -90,6 +90,26 @@ class CallBuilder:
             })
         return t_start, t_end
 
+    def say_at(self, speaker: str, text: str, t_start: float,
+               asr_confidence: float | None = None, log_transcript: bool = True) -> tuple[float, float]:
+        """Renders `text` as `speaker` starting at an ABSOLUTE time, independent
+        of the sequential cursor -- the only way to create genuine cross-channel
+        overlap (e.g. a real barge-in) instead of an authored event with no
+        audio behind it."""
+        clip = self._render(speaker, text)
+        start_sample = round(t_start * self.sr)
+        end_sample = start_sample + len(clip)
+        buf = self._buf(speaker)
+        buf[start_sample:end_sample] += clip
+        t_end = end_sample / self.sr
+        self.end_of_call = max(self.end_of_call, t_end)
+        if log_transcript:
+            self.transcript.append({
+                "speaker": speaker, "t_start": t_start, "t_end": t_end,
+                "text": text, "asr_confidence": asr_confidence,
+            })
+        return t_start, t_end
+
     def inject_noise(self, speaker: str, t_start: float, duration: float,
                       amplitude: float = 0.08, seed: int = 0) -> tuple[float, float]:
         """Places a short noise burst at an ABSOLUTE time (used for coughs /
@@ -297,9 +317,12 @@ def build_barge_in_basic() -> None:
     t_yield2 = t_start5 + 2.45
     b.add_event("barge_in_start", t_barge_in, {"channel": "caller"})
     b.add_event("agent_yield", t_yield2, {"trigger": "caller_speech", "expected": "prompt_yield"})
-    b.cursor = t_yield2
 
-    b.say("caller", "Actually, never mind, I found the confirmation email.", gap_before=0.05)
+    # Genuine overlap: the caller's line actually starts 0.45s before the agent
+    # yields, rendered at that absolute time -- not fabricated, not sequential.
+    _, t_end_overlap = b.say_at("caller", "Actually, never mind, I found the confirmation email.", t_barge_in)
+    b.cursor = max(t_yield2, t_end_overlap)
+
     b.say("agent", "Sounds good, glad you found it. Have a great day.", gap_before=0.3)
 
     scenario_db = {"patients": {"P100": {"name": "Jane Doe", "appointments": ["A1"]}}}

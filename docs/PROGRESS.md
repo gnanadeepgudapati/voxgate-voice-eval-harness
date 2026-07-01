@@ -52,8 +52,8 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [x] Test: faithfulness judge structured-output shape (via `JudgeClient` protocol + fake in tests)
 
 ## Phase 5 — Acoustic suite (barge_in first — headline)
-- [ ] `metrics/acoustic/barge_in.py` — 2-ch VAD + markers → time-to-yield; fail-to-yield & false-yield
-- [ ] Test: synthetic overlap → correct time-to-yield; injected cough → flagged false yield, not a yield
+- [x] `metrics/acoustic/barge_in.py` — 2-ch VAD (silero) + overlap logic → time-to-yield; fail-to-yield & false-yield
+- [x] Test: synthetic overlap → correct time-to-yield; injected cough → flagged false yield, not a yield
 - [ ] `metrics/acoustic/turn_taking_latency.py` — gap distribution p50/p90/p99 (not just mean)
 - [ ] `metrics/acoustic/latency_thresholds.py` — deterministic FTL + silence, advisory (C1(7))
 - [ ] `metrics/acoustic/pitch_prosody.py` — F0 contour (range/monotone) + speech rate

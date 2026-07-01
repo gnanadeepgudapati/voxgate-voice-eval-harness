@@ -32,3 +32,26 @@
 - **Prevention:** when running `uv sync` with extras, always pass every extra
   needed together (e.g. `--extra acoustic --extra dev`) — passing one alone
   uninstalls packages from extras not listed (it dropped `pytest` once).
+
+### 2026-06-30 — barge_in_basic fixture's "genuine barge-in" had no real overlapping audio
+- **Symptom:** Real silero-VAD run against `barge_in_basic` found zero barge-ins at all
+  (`BargeInMetric().compute(ctx)` → `barge_ins: []`), even though the fixture is meant to
+  encode two scenarios. Direct inspection (`fixture.audio_caller[8.0*sr:9.0*sr]`) showed
+  literal all-zero samples in the window the `barge_in_start`(@8.43s)/`agent_yield`(@8.88s)
+  events claimed the caller was speaking over the agent.
+- **Root cause:** In `scripts/generate_fixtures.py::build_barge_in_basic`, the "genuine
+  barge-in" events were authored at absolute times, but the caller's actual line
+  ("Actually, never mind...") was rendered afterward via sequential `b.say(..., gap_before=0.05)`
+  off `b.cursor = t_yield2` — i.e. placed AFTER the agent's clip ended, not overlapping it.
+  This is exactly the fabricated-alignment failure mode CLAUDE.md's scope note warns
+  against: an authored event timestamp with no real audio behind it. (The cough/false-yield
+  scenario was fine — that noise burst genuinely overlaps the agent audio; VAD legitimately
+  just doesn't classify it as speech, which is a real proxy-validity finding, not a bug.)
+- **Fix:** added `CallBuilder.say_at(speaker, text, t_start, ...)` — renders and places a
+  clip at an ABSOLUTE time (mirrors the existing `inject_noise` pattern) instead of
+  cursor-relative. `build_barge_in_basic` now places the caller's barge-in line via
+  `say_at(..., t_barge_in)`, so it genuinely overlaps the last 0.45s of the agent's cut-short
+  utterance. Regenerated the fixture; `BargeInMetric` now detects the real overlap.
+- **Prevention:** when authoring a fixture event that claims two channels overlap, verify
+  it by inspecting the actual samples (not just trusting the event's `t` value) before
+  treating the fixture as ground truth for a metric's test.
