@@ -18,8 +18,14 @@ acoustic = [
     "librosa>=0.10",
     "praat-parselmouth>=0.4",
     "faster-whisper>=1.0",
-    "webrtcvad>=2.0",
+    # webrtcvad needs a C compiler to build from source (no Windows wheel for
+    # this Python) -- silero-vad is CLAUDE.md's other listed option and is
+    # pure Python + ONNX, no compiler required.
+    "silero-vad>=5.1",
     "jiwer>=3.0",
+    # librosa's own numba floor is too old to build on Python 3.13+ (llvmlite
+    # wheel for that numba version doesn't support it) -- force a modern one.
+    "numba>=0.61",
 ]
 judge = [
     "anthropic>=0.40",
