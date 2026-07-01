@@ -2653,6 +2653,15 @@ wheels = [
 ]
 
 [[package]]
+name = "speechmos"
+version = "0.0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/03/b9f7fb53094b7919feb7a37d0dbc445f20276cff0743f518cd8d2726074a/speechmos-0.0.1.1.tar.gz", hash = "sha256:f65040b408a5114b808fba8abcbd22aa09dc77e60bea0c2d2b060efebca53dec", size = 9442691, upload-time = "2023-07-13T09:20:40.616Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/0e/08369f3574447acfe78a7678f9a5e2b9c6629888be25a5e2407d616a6c02/speechmos-0.0.1.1-py3-none-any.whl", hash = "sha256:31c4c9d3234f6ee10102edff74333014c50006a3f389daf7ecacae34e68ebbf7", size = 9439732, upload-time = "2023-07-13T09:20:37.718Z" },
+]
+
+[[package]]
 name = "standard-aifc"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2990,6 +2999,7 @@ acoustic = [
     { name = "numba" },
     { name = "praat-parselmouth" },
     { name = "silero-vad" },
+    { name = "speechmos" },
     { name = "transformers" },
 ]
 dev = [
@@ -3025,6 +3035,7 @@ requires-dist = [
     { name = "scipy", marker = "extra == 'stats'", specifier = ">=1.11" },
     { name = "silero-vad", marker = "extra == 'acoustic'", specifier = ">=5.1" },
     { name = "soundfile", specifier = ">=0.12" },
+    { name = "speechmos", marker = "extra == 'acoustic'", specifier = ">=0.0.1" },
     { name = "transformers", marker = "extra == 'acoustic'", specifier = ">=4.40" },
     { name = "xhtml2pdf", specifier = ">=0.2.15" },
 ]

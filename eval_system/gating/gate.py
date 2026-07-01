@@ -42,6 +42,7 @@ GATE_RATIONALE: dict[str, str] = {
     "double_talk": "Overlap alone isn't necessarily a defect (natural backchannels overlap constantly) -- reports duration/ratio, advisory by nature.",
     "ser_emotion": "Objective classifier on the raw waveform, but acted-emotion SER is a noisy proxy -- IEMOCAP humans only agree with each other at Fleiss' kappa ~0.27-0.48, so a noisier-than-human-agreement signal can't gate. Hardcoded non-promotable (it's SIGNAL-kind, structurally outside the judge-promotion path).",
     "emotion_appropriateness_mm": "Multimodal judge that hears real audio + conversational context, but LLM judges drift and are noisy (Part 1 Q3) -- always advisory, never promoted even if calibration passes, per CLAUDE.md's explicit invariant for emotion metrics.",
+    "naturalness_mos": "Non-intrusive MOS (DNSMOS/P.808) is a perceptual proxy that saturates above ~4 and can't reliably separate 'good' from 'excellent' -- hardcoded advisory always, same class of limitation as pitch_prosody.",
 }
 
 

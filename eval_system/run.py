@@ -41,6 +41,7 @@ from eval_system.metrics.acoustic import (  # noqa: F401
     emotional_appropriateness,
     entity_intelligibility,
     latency_thresholds,
+    naturalness_mos,
     pitch_prosody,
     ser_emotion,
     turn_taking_latency,

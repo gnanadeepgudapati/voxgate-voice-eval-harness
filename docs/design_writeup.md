@@ -85,7 +85,16 @@ is:
   substring match against STT output false-failed on "four eight two one three" vs. STT's
   rendered "4-8213" — a representation mismatch, not an actual intelligibility failure,
   fixed by normalizing spoken-number words to digits before comparing (see
-  `entity_intelligibility.py`).
+  `entity_intelligibility.py`). It also now locates WHERE each critical entity landed
+  (word-level timestamps via faster-whisper's own `word_timestamps=True`, no new
+  dependency) rather than only flagging that it's missing — a real "Lee" → "Leon"
+  mangling in `happy_path_book` is now pinpointed at 17.76–17.98s with confidence 0.62,
+  not just reported as absent. WhisperX (wav2vec2 forced alignment) was tried first for
+  this and rejected: installing it force-downgrades `transformers`/`torch`/`torchaudio`
+  in a way that concretely broke `ser_emotion`'s already-working real-model test —
+  verified empirically, then reverted. Gating stays exactly what it was: critical-entity
+  survival alone, never overall WER (which is banded — excellent/good/fair/poor — for
+  the report only).
 - **`faithfulness`** (LLM judge: are the agent's claims grounded in tool results?) is the
   clearest case for a judge over a rule: "grounded" requires understanding paraphrase and
   implication, not keyword matching. But an LLM judge is itself an unproven evaluator until
@@ -154,6 +163,18 @@ is:
     reporting-only (`emotion_disagreement_turns` in the per-call JSON, an "Emotion (advisory)"
     section in `report.md`) and never touches the ship verdict, since both inputs to it are
     permanently advisory metrics.
+- **`naturalness_mos`** (non-intrusive MOS, DNSMOS/P.808) fills a real gap: no naturalness
+  metric existed before it, and assessment.md explicitly names the "non-intrusive-MOS family."
+  It's non-intrusive by design — no clean reference recording is needed, unlike PESQ/POLQA,
+  which fits a system with no such reference to compare against. It's hardcoded advisory,
+  always, for the same reason `pitch_prosody` is: MOS is a perceptual proxy that saturates
+  above ~4 and can't reliably separate "good" from "excellent." Bands: ≥4.0 good, 3.5–4.0
+  acceptable, <3.5 flagged as dissatisfaction (that threshold is a judgment call, not a
+  calibrated cutoff). One more honest note: the spec for this metric named UTMOS via a
+  specific PyPI package as the primary engine; that package's advertised UTMOS entry point
+  doesn't actually exist in the published release (verified before writing any code) — only
+  DNSMOS/AECMOS/PLCMOS ship. DNSMOS was already the named fallback, so that's what's really
+  running; `details["mos_engine"]` records this so a future real-UTMOS swap stays visible.
 - **Drift**: `calibration/drift.py` KS-tests a judge's current score distribution against a
   frozen golden-set baseline; a significant shift (model update, prompt change,
   provider-side regression) flags for re-calibration before the judge's trust tier is

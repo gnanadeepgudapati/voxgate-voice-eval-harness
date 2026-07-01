@@ -35,6 +35,11 @@ acoustic = [
     # SER (ser_emotion.py): superb/wav2vec2-base-superb-er via transformers'
     # audio-classification pipeline. torch already present (silero-vad pulls it in).
     "transformers>=4.40",
+    # naturalness_mos.py: non-intrusive MOS via DNSMOS (P.808). The package's
+    # advertised UTMOS entry point (utmos22_strong) doesn't actually exist in
+    # the published release -- DNSMOS is what's really shipped, and was
+    # already an approved fallback. ONNX models bundled, no extra download.
+    "speechmos>=0.0.1",
 ]
 judge = [
     "anthropic>=0.40",

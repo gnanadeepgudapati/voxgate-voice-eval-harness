@@ -7,7 +7,9 @@ from eval_system.context.fixture_loader import load_fixture
 from eval_system.context.metric_context import MetricContext, Turn, build_metric_context
 from eval_system.metrics.acoustic.entity_intelligibility import (
     EntityIntelligibilityMetric,
+    locate_critical_entities,
     missing_critical_entities,
+    wer_band,
     word_error_rate,
 )
 from eval_system.metrics.base import Gating, MetricKind, Status
@@ -69,11 +71,69 @@ def test_word_error_rate_none_for_empty_reference():
     assert word_error_rate("", "anything") is None
 
 
-# --- metric-level, injected STT ---
+# --- WER banding (assessment.md-adjacent reporting bands, doesn't affect gating) ---
+
+def test_wer_band_excellent_below_5_percent():
+    assert wer_band(0.03) == "excellent"
+
+
+def test_wer_band_good_between_5_and_10_percent():
+    assert wer_band(0.07) == "good"
+
+
+def test_wer_band_poor_above_20_percent():
+    assert wer_band(0.25) == "poor"
+
+
+def test_wer_band_none_for_none_wer():
+    assert wer_band(None) is None
+
+
+# --- entity location (word-level timestamps via faster-whisper's native
+# word_timestamps, so a mangled critical entity can be pinpointed, not just
+# flagged) ---
+
+def test_locate_finds_text_entity_span():
+    words = [
+        {"word": "with", "start": 1.0, "end": 1.2, "probability": 0.99},
+        {"word": "Lee", "start": 1.2, "end": 1.5, "probability": 0.95},
+        {"word": "Tuesday", "start": 1.5, "end": 2.0, "probability": 0.9},
+    ]
+
+    locations = locate_critical_entities(["Lee"], words)
+
+    assert locations == [{"entity": "Lee", "found": True, "start": 1.2, "end": 1.5, "confidence": pytest.approx(0.95)}]
+
+
+def test_locate_reports_not_found_when_entity_mangled():
+    # the real "Lee" -> "Leon" mangling: no word matches "Lee" at all.
+    words = [{"word": "Leon", "start": 1.2, "end": 1.6, "probability": 0.62}]
+
+    locations = locate_critical_entities(["Lee"], words)
+
+    assert locations == [{"entity": "Lee", "found": False}]
+
+
+def test_locate_finds_numeric_entity_span_across_multiple_words():
+    words = [
+        {"word": "is", "start": 5.0, "end": 5.1, "probability": 0.99},
+        {"word": "4", "start": 5.1, "end": 5.3, "probability": 0.9},
+        {"word": "-8213.", "start": 5.3, "end": 5.8, "probability": 0.85},
+    ]
+
+    locations = locate_critical_entities(["four eight two one three"], words)
+
+    assert locations == [{
+        "entity": "four eight two one three", "found": True,
+        "start": 5.1, "end": 5.8, "confidence": pytest.approx((0.9 + 0.85) / 2),
+    }]
+
+
+# --- metric-level, injected STT (stt_fn now returns {"text":, "words":}) ---
 
 def test_metric_passes_when_all_entities_survive_stt():
     def fake_stt(audio, sr):
-        return "booked with doctor lee, confirmation four eight two one three"
+        return {"text": "booked with doctor lee, confirmation four eight two one three", "words": []}
 
     transcript = [Turn(speaker="agent", t_start=0.0, t_end=1.0, text="booked with Lee, confirmation four eight two one three")]
     ctx = _make_ctx(transcript, ["Lee", "four eight two one three"])
@@ -84,11 +144,12 @@ def test_metric_passes_when_all_entities_survive_stt():
     assert score.kind is MetricKind.SIGNAL
     assert score.gating is Gating.GATE
     assert score.details["missing_entities"] == []
+    assert score.details["asr_engine"] == "faster-whisper"
 
 
 def test_metric_fails_when_an_entity_does_not_survive_stt():
     def fake_stt(audio, sr):
-        return "booked with doctor lee"  # confirmation number garbled/missing
+        return {"text": "booked with doctor lee", "words": []}  # confirmation number garbled/missing
 
     transcript = [Turn(speaker="agent", t_start=0.0, t_end=1.0, text="booked with Lee, confirmation four eight two one three")]
     ctx = _make_ctx(transcript, ["Lee", "four eight two one three"])
@@ -99,10 +160,47 @@ def test_metric_fails_when_an_entity_does_not_survive_stt():
     assert score.details["missing_entities"] == ["four eight two one three"]
 
 
+def test_metric_fails_on_missing_entity_regardless_of_wer_band():
+    # Gating is unchanged: overall WER is informational only. A "poor" WER
+    # with no missing critical entities must still PASS the gate.
+    def fake_stt(audio, sr):
+        # very different wording (high WER) but the critical entity survives
+        return {"text": "uh yeah so anyway Lee is the doctor I guess", "words": []}
+
+    transcript = [Turn(speaker="agent", t_start=0.0, t_end=1.0, text="booked with Lee")]
+    ctx = _make_ctx(transcript, ["Lee"])
+
+    score = EntityIntelligibilityMetric(stt_fn=fake_stt).compute(ctx)
+
+    assert score.status is Status.PASS  # critical entity present -> gate passes
+    assert score.details["wer_band"] in ("poor", "fair", "good", "excellent")  # informational only
+
+
+def test_metric_includes_critical_entity_locations_with_timestamps():
+    def fake_stt(audio, sr):
+        return {
+            "text": "booked with lee",
+            "words": [
+                {"word": "booked", "start": 0.0, "end": 0.3, "probability": 0.99},
+                {"word": "with", "start": 0.3, "end": 0.5, "probability": 0.99},
+                {"word": "lee", "start": 0.5, "end": 0.8, "probability": 0.9},
+            ],
+        }
+
+    transcript = [Turn(speaker="agent", t_start=0.0, t_end=1.0, text="booked with Lee")]
+    ctx = _make_ctx(transcript, ["Lee"])
+
+    score = EntityIntelligibilityMetric(stt_fn=fake_stt).compute(ctx)
+
+    assert score.details["critical_entity_locations"] == [
+        {"entity": "Lee", "found": True, "start": 0.5, "end": 0.8, "confidence": pytest.approx(0.9)}
+    ]
+
+
 def test_metric_skipped_when_no_critical_entities_defined():
     ctx = _make_ctx([], [])
 
-    score = EntityIntelligibilityMetric(stt_fn=lambda a, sr: "").compute(ctx)
+    score = EntityIntelligibilityMetric(stt_fn=lambda a, sr: {"text": "", "words": []}).compute(ctx)
 
     assert score.status is Status.SKIPPED
     assert score.score is None
@@ -117,3 +215,5 @@ def test_real_fixture_runs_end_to_end_with_real_stt():
     assert score.kind is MetricKind.SIGNAL
     assert score.gating is Gating.GATE
     assert score.status in (Status.PASS, Status.FAIL)
+    assert score.details["asr_engine"] == "faster-whisper"
+    assert len(score.details["critical_entity_locations"]) == len(fixture.expected["critical_entities"])
