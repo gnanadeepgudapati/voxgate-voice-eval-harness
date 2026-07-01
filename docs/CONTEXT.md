@@ -12,7 +12,15 @@ two-tier **ship / don't-ship** verdict for CI, plus per-call + aggregate reports
 ## What exists now
 - `CLAUDE.md` (decisions/constraints), `docs/assessment.md` (requirements), `docs/architecture.md` (structure).
 - `docs/PROGRESS.md`, `docs/ERRORS.md`, `docs/CONTEXT.md` (this file) — working memory.
-- **No source code yet.** Awaiting approval of the build plan before any implementation.
+- Build plan approved. On branch `build/eval-system`. `uv` venv on Python 3.13.5
+  (repo Python was 3.14, no `uv` installed — installed uv via pip, pinned venv to 3.13.5
+  for ML wheel compatibility). Core deps only in the default install; `acoustic`/`judge`/
+  `stats` are optional extras so core+semantic run without heavy libs.
+- **Phase 1 done:** `eval_system/metrics/base.py` (MetricKind/Status/Gating/MetricScore/
+  BaseMetric), `eval_system/context/metric_context.py` (Turn/ToolEvent/Event/MetricContext
+  — types only, join logic is Phase 3), `eval_system/metrics/registry.py` (REGISTRY,
+  @register, two-phase run(), _safe() isolation). 7/7 tests passing
+  (`tests/test_contracts.py`, `tests/test_registry.py`).
 
 ## Key decisions (locked)
 - **Open-loop, fixed-clock fixture replay only.** No closed-loop bot-to-bot runner.
@@ -33,10 +41,11 @@ Contracts → fixtures → clock-join(+tests) → semantic (det→judge) → aco
 → calibration → gating+report → validators/sampling/monitoring → docs.
 
 ## Next 3 steps
-1. **GATE:** get user approval of the build plan (blocks all source).
-2. Phase 1 — scaffold + lock core contracts: `base.py`, `metric_context.py` (types),
-   `registry.py`; prove with shape/idempotency/registry-drop-in/ERROR-isolation tests.
-3. Phase 2 — fixture format + `happy_path_book`, `reschedule_trap`, `barge_in_basic`.
+1. Phase 2 — fixture format (caller.wav, events.jsonl, scenario_db.json, expected.json)
+   + `happy_path_book`, `reschedule_trap`, `barge_in_basic` fixtures + schema-load test.
+2. Phase 3 — clock-join backbone in `metric_context.py` (riskiest; test hardest).
+3. Phase 4 — semantic suite, deterministic metrics first (task_success, tool_call_ordering
+   incl. reschedule-trap invariant), then faithfulness judge.
 
 ## Open questions
 - Judge provider (Anthropic vs OpenAI) for faithfulness/emotion — default Anthropic per CLAUDE.md tech list.

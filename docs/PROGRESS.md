@@ -5,24 +5,25 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**STEP 0 — Planning.** Working-memory files created. Build plan drafted and awaiting user
-approval. **No source code may be written until the build plan is approved.**
+**Phase 2 — Fixture format + synthetic fixtures.** Phase 1 (core contracts) complete
+and tested (7/7 passing). Repo scaffolded under `eval_system/`, venv on Python 3.13.5
+via `uv`, heavy acoustic/judge deps gated behind optional extras.
 
 ---
 
 ## Phase 0 — Planning & working memory
 - [x] Read CLAUDE.md, docs/assessment.md, docs/architecture.md
 - [x] Create docs/PROGRESS.md, docs/ERRORS.md, docs/CONTEXT.md
-- [~] Draft ordered build plan (files + tests per step)
-- [ ] **GATE:** user approves build plan ← blocks all source code
+- [x] Draft ordered build plan (files + tests per step)
+- [x] **GATE:** user approves build plan ← blocks all source code
 
 ## Phase 1 — Core contracts (build FIRST, lock interfaces)
-- [ ] `metrics/base.py` — `MetricKind`, `Status`, `Gating` enums; `MetricScore`; `BaseMetric`
-- [ ] `context/metric_context.py` — `MetricContext`, `Turn`, `ToolEvent`, `Event` dataclasses (types only, join logic later)
-- [ ] `metrics/registry.py` — `REGISTRY`, `@register`, two-phase `run()`, `_safe()` isolation
-- [ ] Test: contract shape / enum values / `MetricScore.key` idempotency tuple
-- [ ] Test: registry `@register` drop-in adds a metric with zero runner edits
-- [ ] Test: `_safe()` turns a crashing metric into `ERROR`, suite continues (C1(1))
+- [x] `metrics/base.py` — `MetricKind`, `Status`, `Gating` enums; `MetricScore`; `BaseMetric`
+- [x] `context/metric_context.py` — `MetricContext`, `Turn`, `ToolEvent`, `Event` dataclasses (types only, join logic later)
+- [x] `metrics/registry.py` — `REGISTRY`, `@register`, two-phase `run()`, `_safe()` isolation
+- [x] Test: contract shape / enum values / `MetricScore.key` idempotency tuple
+- [x] Test: registry `@register` drop-in adds a metric with zero runner edits
+- [x] Test: `_safe()` turns a crashing metric into `ERROR`, suite continues (C1(1))
 
 ## Phase 2 — Fixture format + synthetic fixtures
 - [ ] Define fixture schema (caller.wav, events.jsonl, scenario_db.json, expected.json)

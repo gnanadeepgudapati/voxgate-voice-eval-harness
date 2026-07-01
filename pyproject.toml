@@ -1,0 +1,45 @@
+[project]
+name = "voxgate-voice-eval"
+version = "0.1.0"
+description = "VoxGate — post-hoc evaluation system for an inbound clinic-scheduling voice agent."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+]
+
+# Heavy / optional deps are gated behind extras so the CORE CONTRACT and SEMANTIC
+# layers stay runnable even where an acoustic wheel is unavailable on a given
+# interpreter. See CLAUDE.md invariant: "keep the core contracts dependency-free".
+[project.optional-dependencies]
+acoustic = [
+    "librosa>=0.10",
+    "praat-parselmouth>=0.4",
+    "faster-whisper>=1.0",
+    "webrtcvad>=2.0",
+    "jiwer>=3.0",
+]
+judge = [
+    "anthropic>=0.40",
+    "openai>=1.40",
+]
+stats = [
+    "scipy>=1.11",
+    "scikit-learn>=1.3",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["eval_system"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
