@@ -104,3 +104,31 @@
 - **Prevention:** any free-text field from an LLM judge that lands inside a Markdown table
   cell must go through `_single_line()` (or equivalent) before insertion — never trust
   external text to already be single-line.
+
+### 2026-07-01 — xhtml2pdf ignores word-break/overflow-wrap; long metric names overflowed into the next table column
+- **Symptom:** Visual PyMuPDF inspection of the real `out/report.pdf` showed
+  `instruction_adherence_judge`/`emotion_appropriateness_mm` running directly into their
+  Status badge with no gap (e.g. "instruction_adherence_judgePASS"), on the per-call metrics
+  table, the advisory-metrics table, and the judge-coverage table.
+- **Root cause:** two compounding false leads before the real cause. First guess (title=
+  attribute too long) was wrong — capping it to 500 chars didn't fix it. Actual cause,
+  confirmed by extracting real bounding boxes via `page.get_text("dict")`: xhtml2pdf's
+  layout engine does not honor `word-break: break-all` / `overflow-wrap` inside a
+  `table-layout: fixed` cell. An unbroken run like `instruction_adherence_judge` (no space
+  characters) is painted as one line that overflows straight past its column's boundary into
+  the next column's fixed x-position, rather than wrapping. A prior session's claim that
+  `word-break: break-all` "just verified WORKS" was itself wrong — that isolated test
+  omitted the real `body { font-family: Helvetica; font-size: 10.5pt }` rule, which happened
+  to render the test string just short enough to fit without ever needing to wrap.
+- **Fix:** confirmed xhtml2pdf DOES wrap on real whitespace (verified: "some reason text
+  here that is fairly long" wrapped correctly in the same cell). Added
+  `_breakable_metric_name()` in `eval_system/report/html_report.py`, which inserts a real
+  space after every underscore (`"instruction_adherence_judge"` → `"instruction_
+  adherence_ judge"`) before rendering a metric name into any of the four narrow table-cell
+  contexts (per-call metrics table, gate/advisory table, and the three aggregate tables).
+  Left the CSS `word-break`/`overflow-wrap` rules in place as harmless defensive CSS but they
+  are not load-bearing — the real fix is the inserted whitespace.
+- **Prevention:** never trust a CSS-property fix for xhtml2pdf without rendering the PDF to
+  an image and inspecting actual glyph bounding boxes (`fitz`/PyMuPDF `page.get_text("dict")`)
+  using the SAME CSS the real report uses (including body font/size) — a minimal repro that
+  drops seemingly-unrelated rules can silently pass for the wrong reason.

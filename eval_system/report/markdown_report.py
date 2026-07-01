@@ -49,12 +49,18 @@ def _single_line(text: str, max_len: int = 160) -> str:
     return collapsed[:max_len]
 
 
-def _one_line_reason(score: MetricScore) -> str:
+def _one_line_reason(score: MetricScore, max_len: int = 160) -> str:
+    """`max_len` controls how aggressively free-text fields (judge notes,
+    ERROR messages) get truncated. Markdown rendering uses the 160-char
+    default; html_report.py calls this with a very large max_len to get the
+    full (whitespace-collapsed, never raw-multiline) text for its own
+    140-char truncate-with-tooltip/details treatment -- one shared "what does
+    this metric's reason mean" source of truth, two different display caps."""
     d = score.details
     if score.status is Status.SKIPPED:
         return d.get("reason", "skipped")
     if score.status is Status.ERROR:
-        return _single_line(f"evaluator error: {d.get('exc', 'unknown')}")
+        return _single_line(f"evaluator error: {d.get('exc', 'unknown')}", max_len)
 
     metric = score.metric
     if metric == "task_success":
@@ -74,7 +80,7 @@ def _one_line_reason(score: MetricScore) -> str:
         missing = d.get("missing_entities", [])
         return f"missing: {', '.join(missing)}" if missing else "all critical entities read back"
     if metric in ("instruction_adherence_judge", "emotional_appropriateness"):
-        return _single_line(d.get("notes") or "") or "no notes"
+        return _single_line(d.get("notes") or "", max_len) or "no notes"
     if metric == "faithfulness":
         claims = d.get("ungrounded_claims", [])
         return f"{len(claims)} ungrounded claim(s)" if claims else "grounded"

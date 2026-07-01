@@ -9,10 +9,33 @@ calls on two axes — **semantic** and **acoustic** — and fuses them into a tw
 **ship / don't-ship** verdict for CI, plus per-call + aggregate + human-readable reports.
 
 ## Status: feature-complete, actively extended beyond the original 9-phase build
-264/264 tests passing. On `main` (single branch now; `build/eval-system` was merged in).
+Full suite passing (`uv run pytest -q`, no failures). Currently on `build/eval-system` branch
+(per gitStatus at session start; earlier CONTEXT said "single branch now" — verify with
+`git branch` before assuming).
 `uv` venv, Python 3.13.5, all extras (`acoustic`/`judge`/`stats`/`dev`) installed together.
 `docs/PROGRESS.md` still shows the original Phase 0-9 checklist (all done) — everything
 below is what's been added since that checklist was last accurate.
+
+## In progress right now: report presentation + README (Deliverable 2) polish pass
+Explicit constraint for this whole pass: **no metric logic, thresholds, gating, or
+MetricScore schema changes — presentation + docs only.**
+- **Done:** `report/html_report.py` rewritten — static `report.md`/`.html`/`.pdf` (versioned
+  `report_<n>` fully removed), clean CSS badges (no Unicode — xhtml2pdf renders Unicode
+  glyphs as garbled boxes), inline-style zebra striping (`tr:nth-child` doesn't render in
+  xhtml2pdf), `<colgroup>` column widths on every table incl. the 3 aggregate tables, title=
+  tooltip + trailing `<details>` overflow for truncated reason/rationale text, header lists
+  every gate failure (no "+N more"). Real bug found + fixed this session: xhtml2pdf ignores
+  `word-break`/`overflow-wrap` inside fixed-width table cells — long unbroken metric names
+  (`instruction_adherence_judge`, `emotion_appropriateness_mm`) overflowed straight into the
+  next column. Fixed via `_breakable_metric_name()` (inserts a real space after each
+  underscore — xhtml2pdf DOES wrap on real whitespace). See docs/ERRORS.md 2026-07-01 for the
+  two false leads (title-length, then a flawed "word-break works" test) before finding the
+  real cause via PyMuPDF bounding-box inspection. Visually verified all pages of a fresh
+  `out/report.pdf` render correctly (no overlap, no empty gaps, no garbled badges).
+- **Not started:** README.md rewrite for Deliverable 2 (two-suite quickstart, registry
+  example, fixture format incl. TEMPLATE exclusion, gate-vs-advisory table, honest
+  limitations section) — must actually run the quickstart commands after writing to verify.
+- Task tracker has this as task #13, pending.
 
 ## Registered metrics (14 total)
 Semantic: `task_success`, `tool_call_ordering`, `instruction_adherence_rule`,

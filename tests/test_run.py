@@ -93,36 +93,37 @@ def test_per_call_file_has_emotion_disagreement_turns_field(tmp_path):
     assert payload["emotion_disagreement_turns"] == []
 
 
-def test_write_report_writes_versioned_markdown_and_pdf(tmp_path):
+def test_write_report_writes_static_markdown_html_pdf(tmp_path):
     report = score_fixture_set(FIXTURES_DIR, metrics_filter=FAST_METRICS)
 
     write_report(report, tmp_path)
 
-    report_md = (tmp_path / "report_1.md").read_text(encoding="utf-8")
+    report_md = (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "HOLD" in report_md  # reschedule_trap's tool_call_ordering failure holds the run
     assert "barge_in" in report_md
     assert "Gate vs. advisory" in report_md
 
-    pdf_bytes = (tmp_path / "report_1.pdf").read_bytes()
+    report_html = (tmp_path / "report.html").read_text(encoding="utf-8")
+    assert "<html" in report_html
+    assert "barge_in" in report_html
+
+    pdf_bytes = (tmp_path / "report.pdf").read_bytes()
     assert pdf_bytes.startswith(b"%PDF")
 
 
-def test_write_report_increments_filename_on_each_call(tmp_path):
+def test_write_report_overwrites_report_files_on_each_call(tmp_path):
     report = score_fixture_set(FIXTURES_DIR, metrics_filter=FAST_METRICS)
 
     write_report(report, tmp_path)
     write_report(report, tmp_path)
     write_report(report, tmp_path)
 
-    assert (tmp_path / "report_1.md").exists()
-    assert (tmp_path / "report_1.pdf").exists()
-    assert (tmp_path / "report_2.md").exists()
-    assert (tmp_path / "report_2.pdf").exists()
-    assert (tmp_path / "report_3.md").exists()
-    assert (tmp_path / "report_3.pdf").exists()
-    # the old static filename is retired entirely, not just superseded
-    assert not (tmp_path / "report.md").exists()
-    assert not (tmp_path / "report.pdf").exists()
+    # a single static report.{md,html,pdf} each time -- never versioned filenames
+    assert (tmp_path / "report.md").exists()
+    assert (tmp_path / "report.html").exists()
+    assert (tmp_path / "report.pdf").exists()
+    assert not (tmp_path / "report_1.md").exists()
+    assert not (tmp_path / "report_2.md").exists()
 
 
 def test_run_cli_exit_code_0_when_ship_true(tmp_path):

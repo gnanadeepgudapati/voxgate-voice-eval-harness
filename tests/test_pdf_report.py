@@ -1,4 +1,11 @@
-from eval_system.report.pdf_report import markdown_to_pdf_bytes
+from eval_system.report.pdf_report import html_to_pdf_bytes, markdown_to_pdf_bytes
+
+
+def test_html_to_pdf_bytes_renders_valid_pdf():
+    pdf_bytes = html_to_pdf_bytes("<html><body><h1>Hello</h1><p>Some body text.</p></body></html>")
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 100
 
 
 def test_renders_valid_pdf_bytes():
