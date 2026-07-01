@@ -5,10 +5,9 @@
 > Seeded from CLAUDE.md "Recommended build order" + "Definition of Done".
 
 ## ▶ Current step
-**Phase 3 — Clock-join backbone.** Phases 1-2 complete, 13/13 tests passing. Fixture
-format locked (call.wav 2-ch + transcript/tool_log/events .jsonl + scenario_db/expected
-.json); 3 fixtures generated with real TTS speech audio (Windows SAPI, 22050Hz) and
-timestamps derived from actual rendered clip lengths — not fabricated.
+**Phase 4 — Semantic suite.** Phases 1-3 complete, 18/18 tests passing. Clock-join
+(`build_metric_context`) built and tested incl. known channel-offset correction.
+Next: `task_success` and `tool_call_ordering` deterministic metrics.
 
 ---
 
@@ -34,10 +33,10 @@ timestamps derived from actual rendered clip lengths — not fabricated.
 - [x] Test: fixtures load + validate against the schema (`tests/test_fixtures.py`, 6 tests)
 
 ## Phase 3 — Clock-join backbone (riskiest — test hardest)
-- [ ] `context/metric_context.py` — build join: 2-ch audio + transcript + tool log + markers onto ONE clock (audio sample index @ sr)
-- [ ] Test: known channel offset → alignment within tolerance
-- [ ] Test: every time is seconds on the canonical clock; metrics never re-derive
-- [ ] Test: optional `asr_confidence` absent → unchanged behavior (C1(6))
+- [x] `context/metric_context.py` — build join: 2-ch audio + transcript + tool log + markers onto ONE clock (audio sample index @ sr)
+- [x] Test: known channel offset → alignment within tolerance
+- [x] Test: every time is seconds on the canonical clock; metrics never re-derive
+- [x] Test: optional `asr_confidence` absent → unchanged behavior (C1(6))
 
 ## Phase 4 — Semantic suite (deterministic before judge)
 - [ ] `metrics/semantic/task_success.py` — deterministic (final DB state vs expected)
