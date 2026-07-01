@@ -1,346 +1,360 @@
 # VoxGate — Voice Agent Evaluation Harness
 
-Post-hoc evaluation system for an existing inbound clinic-scheduling voice agent. Scores
-recorded calls on two axes — **semantic** (task success, tool-call ordering, faithfulness,
-instruction adherence) and **acoustic** (barge-in, turn-taking latency, prosody, emotion,
-entity intelligibility) — and fuses them into a two-tier ship / don't-ship verdict for CI,
-plus per-call and aggregate reports.
+An **offline, fixture-driven evaluation system** that decides, automatically and reproducibly, whether a given build of an inbound clinic-scheduling voice agent is **good enough to ship**.
 
-This is a *post-hoc scorer*, not the voice agent itself, and it replays **fixed-clock,
-pre-rendered fixtures** rather than driving a live bot-to-bot conversation — see
-`docs/design_writeup.md` §1 for why that's the reproducibility-preserving choice.
+It does not build a voice agent. It is the system that judges one — scoring both **what the agent says and does** (semantic / behavioral) and **how it sounds and behaves** (acoustic / paralinguistic), then collapsing everything into a single **SHIP / HOLD** verdict a CI pipeline can consume.
 
-- **`docs/design_writeup.md`** — the design argument (the graded deliverable): reproducibility,
-  taxonomy, proxy validity, gating, offline vs. online, plus the Category-2/3 design notes.
-- **`docs/architecture.md`** — the full component/directory map.
-- **`CLAUDE.md`** — locked decisions and constraints this build follows.
-- **`docs/PROGRESS.md` / `docs/ERRORS.md` / `docs/CONTEXT.md`** — build working-memory (what's
-  done, what broke and why, a compressed resumable snapshot).
+> This README is the "why behind the structure" (assessment.md line 69). For the full design argument see the Part 1 write-up (`docs/design_writeup.pdf`).
 
-## Quickstart
+---
 
-```bash
-uv sync --extra acoustic --extra judge --extra stats --extra dev  # everything, one shot
-uv run pytest -q                                 # run the test suite (284 tests)
+## Table of contents
 
-uv run python -m eval_system.run \                # score every fixture -> reports
-    --fixtures fixtures/ --out out/
-echo $?                                           # 0 = ship, 1 = hold -- this is the CI gate
+1. [Quickstart — how to run](#1-quickstart--how-to-run)
+2. [The one idea behind every decision](#2-the-one-idea-behind-every-decision)
+3. [Architecture overview](#3-architecture-overview)
+4. [Instruction flow — what happens on a run](#4-instruction-flow--what-happens-on-a-run)
+5. [The fixture format](#5-the-fixture-format)
+6. [The two suites & every evaluator](#6-the-two-suites--every-evaluator)
+7. [Technologies involved](#7-technologies-involved)
+8. [Gate vs. advisory — the ship decision](#8-gate-vs-advisory--the-ship-decision)
+9. [Evaluating the evaluators (calibration & drift)](#9-evaluating-the-evaluators-calibration--drift)
+10. [The registry — adding a new evaluator](#10-the-registry--adding-a-new-evaluator)
+11. [Adding your own fixtures](#11-adding-your-own-fixtures)
+12. [Tests](#12-tests)
+13. [Honesty about uncertainty](#13-honesty-about-uncertainty)
+14. [Offline vs. online](#14-offline-vs-online)
 
-uv run python -m eval_system.run \                # subset, for fast iteration
-    --fixtures fixtures/ --out out/ --metrics faithfulness,barge_in
-```
+---
 
-Install every extra **together, in one `uv sync` call** — always all four (`acoustic`,
-`judge`, `stats`, `dev`), never one at a time (verified: a later `uv sync --extra dev` alone
-silently *uninstalls* packages from extras not named in that call, and `calibration/drift.py`
-/ `calibration/judge_agreement.py` import `scipy`/`scikit-learn` unconditionally at module
-level, so `uv run pytest -q` fails to even *collect* tests without `--extra stats` present —
-see `docs/ERRORS.md`).
-
-That single `eval_system.run` command scores **both suites** (semantic + acoustic) over
-every fixture in `fixtures/` and writes everything under `--out`: per-call JSON, an
-aggregate, the gate-vs-advisory breakdown, and the combined human-readable report
-(`report.md` / `report.html` / `report.pdf`, overwritten each run — see "Output" below).
-The process exit code (`0`/`1`) is the thing a CI pipeline should actually gate on.
-
-If you genuinely only want the core contracts + semantic suite running (no acoustic/judge
-extras), `uv sync --extra dev` alone is enough to run `eval_system.run` itself — judge
-metrics will report `Status.ERROR` (not a crash) rather than a `FAIL` — but skip the
-`stats`-dependent test files (`test_drift.py`, `test_judge_agreement.py`) since they don't
-degrade gracefully at collection time:
+## 1. Quickstart — how to run
 
 ```bash
-uv sync --extra dev
-uv run pytest -q --ignore=tests/test_drift.py --ignore=tests/test_judge_agreement.py
+# 1. Install
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. (Optional) enable the multimodal emotion judge
+export GEMINI_API_KEY=<your-key>     # only needed for emotion_appropriateness_mm;
+                                     # without it that one metric returns ERROR (not FAIL)
+                                     # and the run continues — ERROR never blocks a ship.
+
+# 3. Run BOTH suites over a fixture set → combined report + CI verdict
+python -m runners.open_loop --fixtures fixtures/ --out out/
+
+#   • writes out/report.md, out/report.html, out/report.json
+#   • prints the single SHIP/HOLD verdict
+#   • exits 0 on SHIP, 1 on HOLD  ← this is the CI contract
 ```
 
-- `acoustic` — librosa, parselmouth (Praat), faster-whisper, silero-vad, jiwer, speechmos.
-  Pulls in `torch`/`torchaudio` (silero-vad's dependency) and pins `numba>=0.61` (librosa's
-  own floor doesn't build on Python 3.13+ here — see `docs/ERRORS.md`). `webrtcvad` was
-  dropped in favor of `silero-vad` (both are CLAUDE.md-sanctioned VAD choices) since it needs
-  a C compiler this machine doesn't have.
-- `judge` — Anthropic + OpenAI SDKs (text judges) and `google-genai` (the multimodal emotion
-  judge). **Without an API key configured, judge metrics report `Status.ERROR`, not a
-  crash** — the registry's per-evaluator isolation (`_safe()`) means the rest of the report
-  still comes out clean, and `ERROR` never fails the ship verdict (see "Single verdict"
-  below).
+Run a single fixture:
 
-  - `faithfulness`, `instruction_adherence_judge`, `emotional_appropriateness` need
-    `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` (provider selected by `VOXGATE_JUDGE_PROVIDER`).
-  - `emotion_appropriateness_mm` (the multimodal emotion judge that hears real audio bytes)
-    needs `GEMINI_API_KEY` **specifically** — it's independent of `VOXGATE_JUDGE_PROVIDER`
-    and will report `Status.ERROR` on every call if that key is missing, while every other
-    metric runs unaffected.
+```bash
+python -m runners.open_loop --fixtures fixtures/reschedule_trap/ --out out/
+```
 
-  **Easiest: drop your key(s) in `.env`** (repo root, already gitignored — copy
-  `.env.example` if you deleted it):
-  ```
-  VOXGATE_JUDGE_PROVIDER=openai
-  OPENAI_API_KEY=sk-...
-  GEMINI_API_KEY=...
-  ```
-  `get_default_judge_client()` (in `judges/factory.py`) loads `.env` automatically on every
-  call (via `python-dotenv`, a core dependency) — no shell exports needed, and an
-  already-set shell/OS environment variable always takes priority over the file.
-  `OPENAI_JUDGE_MODEL` optionally overrides the model (default `gpt-4o`); set
-  `VOXGATE_JUDGE_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` to switch back.
-  `judges/openai_client.py` / `judges/anthropic_client.py` are both thin adapters over each
-  SDK's structured-output parsing — swap providers without touching a single metric.
+Run the test suite:
 
-  (You can still set these as real environment variables instead of using `.env` if you
-  prefer — `$env:OPENAI_API_KEY = "sk-..."` in PowerShell, `export OPENAI_API_KEY=sk-...`
-  in bash.)
-- `stats` — scipy + scikit-learn, for calibration (`judge_agreement` kappa, `drift` KS test).
+```bash
+pytest -q            # 20+ known-answer unit tests
+```
 
-Core contracts and the full semantic suite run with `--extra dev` alone; nothing in
-`eval_system/metrics/base.py`, `context/metric_context.py`, or `metrics/registry.py` depends
-on the heavy optional libraries.
+**Requirements:** Python 3.10+. Core deps: `numpy`, `librosa`, `parselmouth` (Praat), `silero-vad` (via `torch`), `faster-whisper`, `jiwer`, `pyannote.audio`, `google-genai` (for the Gemini judge), `scipy` (KS drift test), `pytest`. See `requirements.txt` for pinned versions.
 
-## The two suites
+---
 
-Both suites feed the same registry and emit the identical `MetricScore` shape
-(`metrics/base.py`) — there's no separate "acoustic report." Every evaluator makes an
-explicit, defended deterministic-vs-signal-vs-judge choice (assessment.md Parts 2 & 3):
+## 2. The one idea behind every decision
 
-### Suite A — semantic (`metrics/semantic/`)
+**An evaluation is only useful if you can trust its numbers and reproduce them exactly.**
 
-| Metric | Kind | Why |
+Every architectural choice below follows from that single constraint:
+
+- **Determinism over realism** — we replay a fixed timeline instead of chatting live, so a barge-in test means the same thing every run.
+- **ERROR ≠ FAIL** — a crashed metric must never masquerade as a quality regression, nor block a good deploy.
+- **A hard wall between gate and advisory** — only objective, calibrated, reproducible metrics may block a release; everything perceptual is reported, never blocking.
+
+---
+
+## 3. Architecture overview
+
+```
+                              ┌──────────────────────────────────────────────┐
+                              │                 FIXTURE (4 files)             │
+                              │  caller.wav · events.jsonl ·                   │
+                              │  scenario_db.json · expected.json              │
+                              └───────────────────────┬──────────────────────┘
+                                                      │
+                                                      ▼
+                           ┌────────────────────────────────────────────┐
+                           │        validators/  (retry → quarantine)     │
+                           │   rejects malformed fixtures before a run     │
+                           └───────────────────────┬──────────────────────┘
+                                                    │
+                                                    ▼
+                    ┌───────────────────────────────────────────────────────────┐
+                    │            runners/open_loop.py                             │
+                    │   FIXED-CLOCK OPEN-LOOP REPLAY                              │
+                    │   drives the agent off events.jsonl; the interrupt at        │
+                    │   t=4.2s fires at exactly 4.2s on EVERY run                  │
+                    └───────────────────────┬───────────────────────────────────┘
+                                            │  produces run artifacts:
+                                            │  agent audio · transcript ·
+                                            │  tool-call/tool-result log · timestamps
+                                            ▼
+                    ┌───────────────────────────────────────────────────────────┐
+                    │         context/metric_context.py   (THE CLOCK-JOIN)        │
+                    │   aligns the agent output timeline with the fixture event    │
+                    │   timeline. Highest-risk component: bad alignment =          │
+                    │   wrong numbers with NO error raised.                        │
+                    └───────────────┬───────────────────────────┬────────────────┘
+                                    │                           │
+                     ┌──────────────▼─────────────┐ ┌───────────▼──────────────────┐
+                     │  SUITE A — SEMANTIC         │ │  SUITE B — ACOUSTIC            │
+                     │  (transcript + tool record) │ │  (audio + event timeline)      │
+                     │  · task_success       (det) │ │  · barge_in        (signal★)   │
+                     │  · tool_call_ordering (det) │ │  · turn_taking_latency (signal)│
+                     │  · faithfulness     (judge) │ │  · pitch_prosody      (signal) │
+                     │  · instruction_adherence    │ │  · entity_intelligibility(sig) │
+                     │        (rule + judge)       │ │  · emotional_appropriateness   │
+                     │                             │ │        (SER + multimodal judge)│
+                     │                             │ │  · double_talk        (signal) │
+                     │                             │ │  · naturalness_mos    (signal) │
+                     └──────────────┬─────────────┘ └───────────┬──────────────────┘
+                                    │      every metric returns the same           │
+                                    │      MetricScore(status, gating, score,       │
+                                    │      details, versions)                       │
+                                    └───────────────┬───────────────────────────────┘
+                                                    ▼
+                              ┌──────────────────────────────────────────────┐
+                              │   metrics/registry.py   (plug-in registry)    │
+                              │   ENFORCES: ERROR ≠ FAIL                        │
+                              └───────────────────────┬──────────────────────┘
+                                                      ▼
+                    ┌──────────────────────┐   ┌──────────────────────────────────┐
+                    │  calibration/        │   │       gating/gate.py              │
+                    │  judge_agreement (κ) │──▶│  SHIP iff ZERO gate failures      │
+                    │  drift (KS test)     │   │  advisory never blocks · exit 0/1 │
+                    └──────────────────────┘   └───────────────┬──────────────────┘
+                                                               ▼
+                              ┌──────────────────────────────────────────────┐
+                              │   report/combine.py  →  out/report.{md,html,json}│
+                              │   single verdict + per-call + aggregate +      │
+                              │   gate/advisory statement + emotion disagreement│
+                              └──────────────────────────────────────────────┘
+
+                    monitoring/production_proxies.py  ── reuses the metric library
+                                                          for live monitoring (see §14)
+
+                    ★ barge_in = the HEADLINE metric (assessment.md line 54)
+```
+
+### Component responsibilities
+
+| Component | Responsibility |
+|---|---|
+| `runners/open_loop.py` | Fixed-clock open-loop replay engine. Drives the agent off the fixture timeline; produces run artifacts. |
+| `context/metric_context.py` | **The clock-join.** Aligns agent-output timeline with fixture-event timeline. Highest-risk component — tested first and hardest. |
+| `validators/` | Validates fixtures before a run; retries transient issues, quarantines malformed fixtures. |
+| `metrics/registry.py` | Plug-in registry. New evaluators register here without touching the runner. Enforces ERROR ≠ FAIL. |
+| `metrics/base.py` | Defines the shared `MetricScore` object every evaluator returns. |
+| `metrics/semantic/` | Suite A evaluators (transcript + tool-call record). |
+| `metrics/acoustic/` | Suite B evaluators (audio + timeline). |
+| `sampling.py` | Judge sampling policy (defaults to full coverage on a fixture set). |
+| `calibration/` | `judge_agreement` (Cohen's/Fleiss' κ) + drift detection (KS test, version stamps). |
+| `gating/gate.py` | Collapses all `MetricScore`s into one SHIP/HOLD boolean + CI exit code. |
+| `report/combine.py` | Renders the combined report and the gate-vs-advisory statement. |
+| `monitoring/production_proxies.py` | Reuses the metric library against production traffic (online monitoring). |
+
+---
+
+## 4. Instruction flow — what happens on a run
+
+1. **Load & validate** — `validators/` reads the fixture's four files. Malformed fixtures are quarantined; the run doesn't score garbage.
+2. **Fixed-clock replay** — `runners/open_loop.py` plays `caller.wav` and fires each event from `events.jsonl` at its exact timestamp against the agent. The caller audio does **not** react to the agent (open loop) — that's what makes the run reproducible.
+3. **Capture artifacts** — the runner records the agent's audio, transcript, tool-call/tool-result log, and every timestamp.
+4. **Clock-join** — `context/metric_context.py` aligns the agent output timeline against the fixture event timeline so every metric measures against the same, correct clock.
+5. **Score both suites** — the registry runs Suite A (semantic) and Suite B (acoustic). Every evaluator returns a `MetricScore(status, gating, score, details, versions)`. Deterministic/signal metrics run on every call; judge metrics run per the sampling policy.
+6. **Gate** — `gating/gate.py` reads the `gating` flag on each score: **SHIP iff zero gating failures across all calls.** Advisory results and ERRORs never block.
+7. **Report** — `report/combine.py` writes `out/report.{md,html,json}` with the verdict, per-call detail, aggregate, the emotion-disagreement signal, and the gate/advisory statement.
+8. **Exit** — process exits `0` on SHIP, `1` on HOLD. That's the entire CI contract.
+
+---
+
+## 5. The fixture format
+
+A fixture fully specifies **one scenario** as four decoupled files, so a test author can change one axis without regenerating the others:
+
+```
+fixtures/reschedule_trap/
+├── caller.wav          # the human audio (the simulated caller)
+├── events.jsonl        # timed ground-truth events, one per line:
+│                       #   {"t": 4.2, "event": "interrupt_start"}
+│                       #   {"t": 6.0, "event": "interrupt_end"}
+├── scenario_db.json    # the world state the agent's tools read from
+│                       #   (providers, existing appointments, availability)
+└── expected.json       # ground truth to score against
+                        #   (expected tool sequence, critical entities,
+                        #    success criteria, expected emotional context)
+```
+
+**Why this design (Q1 — reproducibility):** a real voice agent's output changes run to run and depends on *when* things happen. By pinning the interruption timing in `events.jsonl` and replaying it on a fixed clock, a barge-in test **means the same thing across runs**. The tradeoff — we give up emergent multi-turn behavior a live human would produce — is deliberate: a non-reproducible number nobody can debug is worse than no number.
+
+`fixtures/TEMPLATE/` is a scaffold for authoring new fixtures and is **excluded from real eval runs** (the runner skips any fixture directory named `TEMPLATE`).
+
+---
+
+## 6. The two suites & every evaluator
+
+Every evaluator makes an **explicit, defended choice** of deterministic vs. LLM-judge vs. signal-processing (assessment.md line 46).
+
+### Suite A — Semantic / behavioral (transcript + tool-call + tool-result)
+
+| Evaluator | Kind | What it checks | Why this kind |
+|---|---|---|---|
+| `tool_call_ordering` | **Deterministic** | Right tool, right args, right sequence. Includes the **reschedule trap**: the new slot must be secured *before* the old one is released, and a mid-sequence failure must never leave the caller with zero appointments (`never_zero_appointments` invariant). | Correctness is exactly assertable in code — no proxy needed. |
+| `task_success` | **Deterministic** | Did the final tool call match the fixture's ground-truth success criteria? | Objective; a plain state comparison. |
+| `faithfulness` | **LLM judge** | Did the agent surface only providers, times, and confirmation numbers that actually appear in tool results (no hallucination)? | Requires semantic comparison of free-form speech against structured tool output — a keyword check can't do it. |
+| `instruction_adherence` | **Rule + judge** | Did it follow stated rules (e.g. always read the appointment back to the caller)? | The read-back check is a deterministic rule (**gate**); conversational nuance is a judge (**advisory**). |
+
+### Suite B — Acoustic / paralinguistic (audio + event timeline)
+
+| Evaluator | Kind | What it checks | Why this kind |
+|---|---|---|---|
+| `barge_in` ★ | **Signal (HEADLINE)** | Every point the caller starts speaking while the agent is talking, and the agent's **time-to-yield**. Flags fail-to-yield (talks over) and false-yields (stops for a cough). | VAD-derived but a deterministic decision once computed; the flagship correctness behavior. |
+| `turn_taking_latency` | **Signal** | Gap between caller end-of-speech and agent response onset. Reports the **distribution (p50/p90/p99)**, not just a mean. | A distribution, not a single verdict — advisory feed into the latency gate. |
+| `pitch_prosody` | **Signal** | F0 contour: out-of-natural-range pitch, flat monotone, plus speech rate. | Perceptual proxy for naturalness, not correctness. |
+| `entity_intelligibility` | **Signal** | Round-trip STT on the agent's audio: do high-stakes tokens (provider/medication names, dates, confirmation numbers) survive? | If a real STT engine can't recover the token, a caller likely couldn't either. |
+| `emotional_appropriateness` | **SER + multimodal judge** | Was the delivered tone appropriate for the moment (calm with an anxious caller, not chirpy on bad news)? Two proxies cross-checked. | See §13 — emotion is perceptual and permanently advisory. |
+| `double_talk` | **Signal** | Sustained overlapping speech between channels. | Live-follow-up drop-in; natural backchannels overlap, so advisory. |
+| `naturalness_mos` | **Signal** | Non-intrusive MOS estimate of audio quality. | Beyond-scope addition; a saturating perceptual proxy — advisory. |
+
+Both suites emit a **structured per-call scored report plus an aggregate**, and both feed **one** verdict.
+
+---
+
+## 7. Technologies involved
+
+| Layer | Technology | Used for |
 |---|---|---|
-| `task_success` | deterministic | Final tool call vs. the fixture's ground-truth success criteria — no proxy, no judge needed. |
-| `tool_call_ordering` | deterministic | A state-reducer walk over the tool log, including the **reschedule-trap invariant** (new slot secured before the old one releases; the caller must never sit at zero appointments mid-sequence) — this is a correctness bug, not a style preference, so it's asserted in code. |
-| `instruction_adherence_rule` | deterministic | Substring check that critical entities were actually read back to the caller — objective and ground-truthed. |
-| `instruction_adherence_judge` | LLM judge | Conversational nuance ("was this handled gracefully") a keyword check can't capture — starts advisory until `judge_agreement` clears the kappa bar. |
-| `faithfulness` | LLM judge | Hallucination detection needs semantic understanding of whether a claim is grounded in the tool results, not just present in them — advisory until calibration trusts it. |
+| Language / runtime | **Python 3.10+** | Whole harness |
+| Voice activity detection | **Silero VAD** (via `torch`; `webrtcvad` fallback) | `barge_in`, `turn_taking_latency` segment boundaries |
+| Pitch / prosody | **Praat via `parselmouth`** (`librosa.pyin` fallback) | F0 contour, monotone detection, speech rate (De Jong syllable-nuclei) |
+| Round-trip STT | **`faster-whisper`** with native `word_timestamps=True` | `entity_intelligibility` re-transcription + word-level localization |
+| Word-error rate | **`jiwer`** | Entity-survival / WER scoring |
+| Speech emotion recognition | **wav2vec2 SER** — `superb/wav2vec2-base-superb-er` (Hugging Face `transformers`) | `ser_emotion` (objective, offline emotion proxy) |
+| Multimodal audio judge | **Gemini 2.5-flash** (`google-genai`, audio bytes via `Part.from_bytes`) | `emotion_appropriateness_mm` (contextual emotion proxy) |
+| LLM judges | **Gemini / LLM-as-judge** | `faithfulness`, `instruction_adherence` (judge portion) |
+| Overlap / diarization | **`pyannote.audio`** | `double_talk` overlap detection |
+| Non-intrusive MOS | **UTMOS / DNSMOS (P.808)** family | `naturalness_mos` |
+| Numerics | **`numpy`** | Signal math, percentiles |
+| Calibration / drift | **Cohen's/Fleiss' κ + KS test (`scipy.stats`)** | `judge_agreement`, drift detection |
+| Testing | **`pytest`** | 20+ known-answer unit tests |
 
-### Suite B — acoustic (`metrics/acoustic/`)
+### Two engineering decisions worth calling out
 
-| Metric | Kind | Why |
+- **We rejected WhisperX** even though it's the "recommended" word-alignment tool: integrating it **force-downgraded `transformers`** and broke the already-working, tested SER emotion metric. We switched to **`faster-whisper` with native `word_timestamps=True`**, which gives sufficient word-level alignment for entity localization without destabilizing a working metric. *The "best" library isn't best if it breaks your suite.*
+- **The judge is cached for determinism.** LLM-judge results are cached at `out/.judge_cache/` keyed by `fixture::turn::promptversion::model` at `temperature=0`, so a network judge is reproducible inside CI.
+
+---
+
+## 8. Gate vs. advisory — the ship decision
+
+**SHIP iff there are zero gating failures across all calls. Advisory results never block. ERROR never blocks.** CI reads exit code `0` (SHIP) / `1` (HOLD).
+
+A metric may **gate** only if it is objective, calibrated, and reproducible. Everything perceptual is **advisory** — reported, never blocking. We also **gate on the tails (p95/p99), not the mean**: a healthy average latency hides a long tail where a handful of callers wait three seconds, and those are the calls that get abandoned.
+
+| Metric | Gating | Why |
 |---|---|---|
-| `barge_in` **(headline)** | signal (VAD) | Detects every point the caller speaks over the agent and measures time-to-yield, flagging both fail-to-yield and false-yield — the flagship interruption-handling behavior (assessment.md line 54). VAD-derived but deterministic once computed. |
-| `turn_taking_latency` | signal | Gap between caller end-of-speech and agent response onset, reported as a **distribution** (p50/p90/p99), not a mean — a single flaky pause shouldn't drown a normally-fast agent. |
-| `latency_thresholds` | deterministic | Timestamp arithmetic against a fixed cutoff — deterministic math, but the cutoff itself is a judgment call, so it stays advisory until promoted. |
-| `pitch_prosody` | signal (F0) | Praat F0 extraction + speech rate — a genuine signal-processing measurement, but "pleasant pitch" is a perceptual proxy, so it's advisory. |
-| `emotional_appropriateness` | LLM judge | Text judge over a prosody *summary* (not real audio) — always advisory, never promoted, because it's honestly not true multimodal judgment. |
-| `entity_intelligibility` | signal (round-trip STT + WER) | Re-transcribes the agent's own audio and checks critical entities (names, dates, confirmation numbers) survive — if a real STT engine can't recover it, a caller likely couldn't either, so this gates. |
-| `ser_emotion` *(two-proxy emotion, half A)* | signal (SER classifier) | Objective wav2vec2 classifier on the raw waveform — a real signal, but IEMOCAP shows even *humans* only agree with each other at Fleiss' kappa ~0.27–0.48 on acted emotion, so a noisier-than-human-agreement proxy can't gate. |
-| `emotion_appropriateness_mm` *(two-proxy emotion, half B)* | multimodal LLM judge | Hears the real audio bytes + conversational context — the closest thing here to true multimodal judgment, but LLM judges drift and are noisy, so always advisory regardless of calibration. |
-| `double_talk` *(live-follow-up)* | signal | Overlap duration/ratio between channels — overlap alone isn't a defect (natural backchannels overlap constantly), so it reports, it doesn't gate. |
-| `naturalness_mos` *(beyond-scope addition)* | signal (DNSMOS/P.808) | Non-intrusive MOS estimate — saturates above ~4.0 and can't reliably separate "good" from "excellent," same class of limitation as `pitch_prosody`. |
+| `tool_call_ordering` | **gate** | Deterministic state reducer incl. the reschedule-trap invariant — a real correctness bug, not a style preference. |
+| `task_success` | **gate** | Deterministic: final tool call vs. ground-truth success criteria. No proxy. |
+| `instruction_adherence_rule` | **gate** | Deterministic read-back check on ground-truthed critical entities. |
+| `barge_in` | **gate** | The headline behavior; a real barge-in miss is a real defect. |
+| `entity_intelligibility` | **gate** | Round-trip STT on ground-truthed entities — if STT can't recover it, a caller likely couldn't either. |
+| `faithfulness` | advisory | LLM judge; unproven proxy until calibration (κ) trusts it. |
+| `instruction_adherence_judge` | advisory | LLM judge for conversational nuance; advisory until κ clears the bar. |
+| `turn_taking_latency` | advisory | A distribution, not a per-call verdict; feeds the latency gate once a cutoff is fixed. |
+| `latency_thresholds` | advisory | Deterministic arithmetic, but the threshold itself is a judgment call. |
+| `pitch_prosody` | advisory | Perceptual proxy for naturalness, not correctness. |
+| `ser_emotion` | advisory | Objective SER, but a noisy proxy — IEMOCAP humans agree only at Fleiss' κ≈0.27–0.48. Non-promotable. |
+| `emotion_appropriateness_mm` | advisory | Multimodal judge; LLM judges drift and are noisy. Permanently advisory (§13). |
+| `double_talk` | advisory | Natural backchannels overlap; reports duration/ratio. |
+| `naturalness_mos` | advisory | Non-intrusive MOS saturates above ~4; can't separate "good" from "excellent." |
 
-`ser_emotion` + `emotion_appropriateness_mm` are a deliberate **two-proxy attack** on the
-hardest metric in the assessment (emotional appropriateness): one objective classifier, one
-contextual multimodal judge, cross-checked per agent turn (`compute_emotion_disagreement()`
-in `report/combine.py`). Neither can gate on its own, but a *disagreement* between them is a
-free trust signal — flag the turn for human review without spending any labeling budget on
-it (assessment.md Part 1 Q3).
+---
 
-## Registry: adding a metric touches one file
+## 9. Evaluating the evaluators (calibration & drift)
 
-Drop a class in `metrics/semantic/` or `metrics/acoustic/`, decorate it `@register`, and
-it's live — zero edits to `registry.py`'s `run()` or to `run.py`. Every metric returns the
-same `MetricScore`; the two-phase runner (`run(ctx, sampler=None)`) executes all
-deterministic/signal metrics first, then judges per the sampling policy, and wraps every
-`compute()` call in `_safe()` so one evaluator's exception becomes a `Status.ERROR` score,
-never a crashed run.
+**Trusting a metric enough to gate:** a judge is promotable only if it agrees with human labels at **Cohen's/Fleiss' κ ≥ 0.6 (we prefer ≥ 0.8)**. Calibration effectively *gates the gate* — until a judge clears the bar it runs advisory.
 
-Minimal shape (this is `double_talk.py`, the actual live-follow-up drop-in added this way —
-see `docs/ERRORS.md`/`docs/CONTEXT.md` for how it was verified to need zero runner edits):
+**Without a giant labeling budget:** we calibrate against a **small frozen golden set** of human-labeled clips and compute κ (`calibration/judge_agreement.py`). The live follow-up (calibrating emotion against three hand-labeled clips) plugs straight into this.
+
+**Judge drift:** LLM judges change under us. We defend with (1) the `temperature=0` reproducibility cache, (2) **version stamps** on every `MetricScore`, and (3) a **KS test** comparing the judge's current score distribution to the frozen golden distribution — if it drifts, we detect it instead of trusting stale numbers.
+
+---
+
+## 10. The registry — adding a new evaluator
+
+New evaluators drop in **without touching the runner** (assessment.md line 38). Implement `MetricScore`-returning callable and register it:
 
 ```python
-from eval_system.metrics.base import BaseMetric, Gating, MetricKind, MetricScore, Status
-from eval_system.metrics.registry import register
+# metrics/acoustic/my_metric.py
+from metrics.base import MetricScore, Status
+from metrics.registry import register
 
-@register
-class MyNewMetric(BaseMetric):
-    name = "my_new_metric"
-    version = "1"
-    kind = MetricKind.SIGNAL          # or DETERMINISTIC / JUDGE -- pick one, never mixed
-    default_gating = Gating.ADVISORY  # GATE only if you can defend it -- see below
-    requires_ground_truth = False     # False => can also run on live traffic, not just fixtures
-
-    def compute(self, ctx) -> MetricScore:
-        ...
-        return MetricScore(
-            call_id=ctx.call_id, metric=self.name, kind=self.kind,
-            status=Status.PASS, gating=self.default_gating, score=1.0,
-            details={...}, evaluator_version=self.version,
-        )
+@register(name="my_metric", suite="acoustic", kind="signal", gating=False)
+def my_metric(ctx) -> MetricScore:
+    value = compute_something(ctx.agent_audio, ctx.events)   # your logic
+    ok = value < THRESHOLD
+    return MetricScore(
+        status=Status.PASS if ok else Status.FAIL,
+        gating=False,                 # advisory
+        score=value,
+        details={"threshold": THRESHOLD},
+        versions={"my_metric": "1.0.0"},
+    )
 ```
 
-Then add one line to `GATE_RATIONALE` in `eval_system/gating/gate.py` (the DoD's explicit
-"why this gates or not" list — see "Gate vs. advisory" below) and import the module from
-`run.py` so its `@register` side effect actually fires (import-for-side-effect is the one
-place the runner needs to know a new metric module exists at all).
+The runner discovers it automatically. `kind` is one of `deterministic` / `signal` / `judge`; `gating` declares whether it can block a ship. **ERROR ≠ FAIL** is enforced by the registry: if your metric raises, it's recorded as `ERROR` and never blocks the ship.
 
-## Fixture format: fixed-clock, open-loop replay
+---
 
-Every fixture is a directory of **6 files** describing one already-recorded call — VoxGate
-never drives a live conversation (no bot-to-bot closed loop; see
-`docs/design_writeup.md` §1 for why open-loop fixed-clock replay is what makes a barge-in
-test mean the same thing every run):
+## 11. Adding your own fixtures
 
-| File | Contents |
-|---|---|
-| `call.wav` | 2-channel real audio — channel 0 caller, channel 1 agent. No enforced sample rate (every metric resamples internally). |
-| `transcript.jsonl` | One JSON object per turn: `speaker`, `t_start`, `t_end`, `text`, `asr_confidence?` — the ground-truth turn timing every acoustic metric keys off. |
-| `tool_log.jsonl` | One JSON object per executed tool call: `name`, `args`, `result`, `t` — what `task_success`/`tool_call_ordering` score against. |
-| `events.jsonl` | Authored timeline markers (`barge_in_start`, `cough`, `agent_yield`, ...) for the acoustic suite. |
-| `scenario_db.json` | Initial ground-truth DB state (only `patients[id].appointments` is actually read, by the reschedule-trap invariant). |
-| `expected.json` | What "correct" means: `tool_sequence`, `invariants`, `critical_entities`, `success_criteria`. |
+1. Copy `fixtures/TEMPLATE/` to `fixtures/<your_scenario>/`.
+2. Drop in `caller.wav`, fill `events.jsonl` (timed events), `scenario_db.json` (tool world), and `expected.json` (ground truth).
+3. Run `python -m runners.open_loop --fixtures fixtures/<your_scenario>/`.
 
-**Canonical clock:** every timestamp across every file is seconds on one clock — the audio
-sample index at the fixture's `sr`. `context/metric_context.py`'s `build_metric_context()`
-is the single clock-join backbone; acoustic metrics read times from `MetricContext` and
-never re-derive them from raw audio. This was built and tested first, deliberately, because
-a silent misalignment produces confidently wrong numbers with no error.
+The validator will reject the fixture (with a clear message) if any file is missing or malformed, so a bad fixture never silently produces wrong numbers.
 
-### Adding a fixture
+---
+
+## 12. Tests
 
 ```bash
-cp -r fixtures/TEMPLATE fixtures/my_new_scenario
-uv run python -m eval_system.validate_fixture fixtures/my_new_scenario/   # validate first
-uv run python -m eval_system.run --fixtures fixtures/ --out out/          # then the full eval
+pytest -q
 ```
 
-`fixtures/TEMPLATE/` is a real, valid, copyable fixture — `fixtures/TEMPLATE/README.md` is
-the full field-by-field authoring guide, including the one thing that's easy to get subtly
-wrong: an interrupt marker must fall inside an *agent* turn's window AND the caller audio
-must genuinely overlap the agent audio at that timestamp in `call.wav` (a fabricated-
-timestamp bug like this was caught and fixed once already in this repo — see
-`docs/ERRORS.md`, 2026-06-30). `validate_fixture` (channels, timeline bounds, unknown tool
-names, and that same semantic-alignment check) is a fast standalone preflight, cheap enough
-for a pre-commit hook or CI gate — exit 0/1. `TEMPLATE/` itself is excluded from real eval
-runs (`discover_fixtures()` in `run.py` skips it by name) — it's a skeleton to copy, not a
-scenario to score.
+20+ **known-answer** unit tests. Two conventions worth knowing:
 
-### Running tests
+- **Tests derive inputs from the real code constants** (e.g. `FAIL_TO_YIELD_THRESHOLD_SEC = 1.0`), never from hard-coded guesses — so the test and the code can't drift apart.
+- **`barge_in` is tested two ways**: an *exact-math* test with injected VAD segments (synthetic tones don't trigger the speech-trained Silero VAD), plus a *real-fixture* test with ±50 ms tolerance for end-to-end behavior.
 
-```bash
-uv run pytest -q               # 284 tests
-uv run pytest tests/test_barge_in_known_answer.py tests/test_known_answer_reschedule_trap.py -q
-```
+---
 
-Beyond ordinary unit tests, there are **known-answer tests** with exact expected values for
-the two hardest things to get right: the reschedule-trap invariant (tool-ordering state
-machine) and `barge_in` timing (exact time-to-yield math via injected speech segments, plus
-one real-audio alignment test against an actual fixture). These were written to *fail loudly*
-if a metric's logic silently drifts, not just to hit a coverage number.
+## 13. Honesty about uncertainty
 
-## Output
+- **Emotion is permanently advisory.** We run two proxies — an offline wav2vec2 SER classifier (objective, calibratable) and a Gemini multimodal judge (contextual) — and treat their **disagreement as a trust signal** that flags a turn for human review. But even human annotators only reach Fleiss' κ≈0.27–0.48 on emotion (IEMOCAP), so **no machine judge can honestly gate a release on emotion.** Neither is ever promoted.
+- **Perceptual proxies stay advisory.** Pitch, speech rate, and MOS approximate "naturalness," not correctness. MOS in particular saturates above ~4.0 and can't reliably separate "good" from "excellent."
+- **Judges drift.** Caching, version stamps, and the KS drift test keep them honest; when they move, we detect it rather than trust them.
 
-`--out out/` writes:
-- One JSON per call (`<call_id>.json`): `ship` verdict, `failures`, and every `MetricScore` —
-  semantic and acoustic emit the identical schema.
-- `aggregate.json` — total calls, ships/holds, deterministic/judge/signal counts, error rate,
-  trusted-judge set, and the run-level `ship`/`gate_failures`/`advisory_failures`/
-  `ship_reason` fields (see "Single verdict" below).
-- `gate_advisory_breakdown.json` — the explicit gate-vs-advisory list with a one-line
-  rationale per metric (also producible directly via `gating.gate.gate_advisory_breakdown()`).
-- The combined human-readable report, written **fresh every run** (overwritten, not
-  versioned) as `report.md`, `report.html`, and `report.pdf` — per-call metric breakdown
-  (grouped semantic/acoustic), acoustic measured values (barge-in per-event time-to-yield,
-  turn-taking-latency percentiles, F0/rate, entity-by-entity STT survival), faithfulness
-  judge findings, the emotion two-proxy disagreement table, and the full aggregate +
-  gate-vs-advisory sections. The PDF is rendered directly from the HTML
-  (`report/html_report.py` → `report/pdf_report.py`'s `html_to_pdf_bytes()`, via
-  `xhtml2pdf`/reportlab — pure Python, no native compiler or system GTK needed, unlike
-  weasyprint).
+---
 
-## Single verdict: how a pile of scores becomes ship/hold
+## 14. Offline vs. online
 
-**SHIP iff zero gate-eligible `FAIL`/`ERROR` across the whole fixture set** — advisory
-scores, however bad, never block a ship (`compute_ship_verdict()` in `report/combine.py`;
-per-call gating is `evaluate_gate()`'s "pass^k" conjunction in `gating/gate.py` — ALL
-gate-eligible metrics must pass, not an average). `run_cli()` returns that verdict as a
-process exit code: **0 = ship, 1 = hold** — that's the literal CI gate.
+**Offline (this harness) is a gate:** deterministic, blocking, run in CI before merge on fixed fixtures with known answers. It answers *"is this build correct?"* with authority.
 
-- **`ERROR` ≠ `FAIL`.** An `ERROR` means the evaluator itself broke (bad API key, model
-  crash, rate limit) — it's fail-closed on a gate-eligible metric (doesn't ship) but reported
-  distinctly, and it's exactly why the registry wraps every `compute()` in `_safe()`: one
-  broken evaluator never corrupts the rest of the report.
-- **`SKIPPED` gate metrics are excluded from the conjunction entirely**, not counted as a
-  missing pass — e.g. `task_success` with no `success_criteria` defined for that fixture.
-- **A judge only becomes gate-eligible once trusted.** Every judge starts advisory;
-  `calibration/judge_agreement.py` (Cohen's kappa vs. a small human-labeled set, threshold
-  0.6) is what lets `gating/gate.py`'s `trusted_judge_metrics` promote one. Two metrics are
-  **hardcoded never-eligible** regardless of kappa: `emotional_appropriateness` and
-  `emotion_appropriateness_mm` (see the design writeup — text-over-a-prosody-summary and
-  LLM-judge drift respectively). `calibration/drift.py` (KS-test vs. a frozen golden-set
-  baseline) is the tripwire for a judge that *was* trusted starting to score differently
-  after a model/prompt change.
+**Online monitoring is a smoke alarm:** production has no ground truth, so `monitoring/production_proxies.py` reuses the same measurement code but can only track **proxies** — latency distributions, VAD-derived barge-in behavior, emotion-disagreement rates — and **alert**, never block. It answers *"has live behavior drifted from what we validated?"* Things you can only learn live: real interruption patterns, real caller emotional range, tail-latency under production load, and STT intelligibility on real acoustic conditions.
 
-## Gate vs. advisory, with rationale
+---
 
-The exact rationale VoxGate defends for every registered metric (mirrors
-`gate_advisory_breakdown.json` / the report's own "Gate vs. advisory" section —
-`gating/gate.py`'s `GATE_RATIONALE` is the single source of truth this table is generated
-from):
-
-| Metric | Gating | Rationale |
-|---|---|---|
-| `task_success` | **gate** | Deterministic: final tool call checked against the fixture's ground-truth success criteria. |
-| `tool_call_ordering` | **gate** | Deterministic state-machine check, including the reschedule-trap invariant — catches a real correctness bug. |
-| `instruction_adherence_rule` | **gate** | Deterministic substring check that critical entities were read back to the caller. |
-| `barge_in` | **gate** | Deterministic once computed from VAD, and the headline interruption-handling behavior — a real miss is a real defect. |
-| `entity_intelligibility` | **gate** | Round-trip STT on ground-truthed critical entities — if a real STT engine can't recover it, a caller likely couldn't either. |
-| `instruction_adherence_judge` | advisory | LLM judge for conversational nuance a keyword check can't capture — advisory until calibration earns trust. |
-| `faithfulness` | advisory | LLM judge for grounding — advisory until calibration proves the judge itself trustworthy. |
-| `turn_taking_latency` | advisory | Reports a latency distribution (p50/p90/p99), not a single verdict — advisory by nature. |
-| `latency_thresholds` | advisory | Deterministic arithmetic against a threshold that is itself a judgment call — advisory until promoted. |
-| `pitch_prosody` | advisory | F0 and speech rate are perceptual proxies for naturalness, not correctness. |
-| `emotional_appropriateness` | advisory (always) | Text judge over a prosody summary, not true multimodal audio — always advisory, never promoted. |
-| `ser_emotion` | advisory (never-promotable) | Objective classifier, but acted-emotion SER is noisier than human inter-rater agreement (IEMOCAP kappa ~0.3–0.5) — can't gate. |
-| `emotion_appropriateness_mm` | advisory (always) | Multimodal judge that hears real audio and context, but LLM judges drift and are noisy — always advisory, never promoted. |
-| `double_talk` | advisory | Overlap alone isn't necessarily a defect — reports duration/ratio, advisory by nature. Live-follow-up drop-in. |
-| `naturalness_mos` | advisory | Non-intrusive MOS saturates above ~4 and can't separate "good" from "excellent." Beyond-scope addition. |
-
-## Known limitations — honesty about what's not solved
-
-- **Every acoustic/emotion score is a perceptual proxy, not ground truth.** F0/prosody,
-  SER, and multimodal-judge tone are all stand-ins for what a human would actually perceive.
-  None of the "always advisory" metrics above are expected to ever earn gate status — that's
-  a deliberate position, not a TODO.
-- **IEMOCAP-level human agreement on acted emotion is only ~0.27–0.48 kappa.** This is the
-  actual argument for why `ser_emotion` can never be promoted: a proxy noisier than human
-  inter-rater agreement has no business gating a deploy, no matter how good its own
-  self-consistency looks.
-- **LLM judges drift.** A judge that clears the kappa bar today isn't guaranteed to still be
-  well-calibrated after a silent model update or prompt change — `calibration/drift.py`'s
-  KS-test against a frozen golden set is the detection mechanism, but it's a tripwire, not a
-  guarantee; there's no automatic re-calibration loop here (a Category-2 design decision,
-  documented not implemented — see the design writeup).
-- **Non-intrusive MOS (DNSMOS) saturates.** Above roughly 4.0/5.0 it stops reliably
-  separating "good" from "excellent" — useful for catching genuinely bad audio, not for
-  fine-grained naturalness ranking. Same limitation class as `pitch_prosody`.
-- **No judge self-consistency sampling.** Repeating one judge call k times and requiring
-  self-agreement is scoped as a Category-2 design decision (documented in
-  `docs/design_writeup.md`), not implemented — `gating/gate.py`'s "pass^k" is a conjunction
-  across *different* gate-eligible metrics, not repeated sampling of the same judge.
-- **Small fixture set.** Three synthetic fixtures (`happy_path_book`, `reschedule_trap`,
-  `barge_in_basic`) exercise the known-answer paths deliberately, not a representative
-  production distribution — see "Offline vs. online" in the design writeup for what only
-  real production traffic would actually teach.
-
-## Why this structure (short version)
-
-- **One contract.** Every metric — semantic or acoustic, deterministic or judge — returns the
-  same `MetricScore` (`metrics/base.py`) into the same registry and report. There's no
-  separate "acoustic report."
-- **Registry, not a hardcoded pipeline.** Dropping a metric file with `@register` on it is
-  the entire integration step (`metrics/registry.py`) — proven directly by the sampling and
-  gate-breakdown tests, and by `double_talk.py` (the live-follow-up addition) needing zero
-  runner edits.
-- **One canonical clock.** `context/metric_context.py`'s `build_metric_context()` is the
-  clock-join backbone: audio sample index at a fixed `sr`. Every acoustic metric reads times
-  from `MetricContext`; none re-derive them from raw audio.
-- **Judges are a swappable seam, not a hardcoded SDK call.** `judges/client.py`'s
-  `JudgeClient` protocol means every judge metric's tests inject a fake and never need
-  network access or an API key; the real SDK adapters are thin and deliberately untested
-  beyond that seam.
-- **Trust is earned, not assumed.** Every judge starts advisory; calibration is what
-  promotes one, and two emotion metrics are hardcoded to never be eligible regardless.
-
-See `docs/design_writeup.md` for the full argument, including the two real bugs this system
-caught in itself while being built (a fabricated-audio-overlap fixture, and a digit-word vs.
-numeral STT mismatch) — both documented in `docs/ERRORS.md` with symptom/root-cause/fix.
+*Design write-up (Part 1): `docs/design_writeup.pdf`. Combined sample report: `out/report.html`.*
