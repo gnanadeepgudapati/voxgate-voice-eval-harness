@@ -62,9 +62,9 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [x] Test: turn_taking distribution; latency advisory does not move gate (C1(7)); entity WER on critical tokens
 
 ## Phase 6 — Calibration
-- [ ] `calibration/judge_agreement.py` — Cohen's kappa vs small human set → trust tier
-- [ ] `calibration/drift.py` — frozen golden set + KS test (fed by version stamps)
-- [ ] Test: low-kappa judge must NOT be able to hard-gate
+- [x] `calibration/judge_agreement.py` — Cohen's kappa vs small human set → trust tier
+- [x] `calibration/drift.py` — frozen golden set + KS test (fed by version stamps)
+- [x] Test: low-kappa judge must NOT be able to hard-gate (degenerate/chance-level data → `trusted=False`)
 
 ## Phase 7 — Gating + report
 - [ ] `gating/gate.py` — two-tier; hard-gate deterministic+trusted; pass^k; tail thresholds
