@@ -73,10 +73,10 @@ to run the suite. Next: `barge_in` (headline acoustic metric).
 - [x] Test: semantic + acoustic emit identical MetricScore schema into one report (via shared `evaluate_gate`/`build_report`)
 
 ## Phase 8 — Validators, sampling, monitoring
-- [ ] `validators/` — preflight (channels, timeline parse, no clipping) + retry→quarantine (C1(4))
-- [ ] `metrics/sampling.py` — stratified judge coverage; defaults 100% on fixtures (C1(5))
-- [ ] `monitoring/production_proxies.py` — ground-truth-free subset (requires_ground_truth flag)
-- [ ] Test: coverage 100% → verdict identical to pre-sampling (C1(5))
+- [x] `validators/` — preflight (channels, timeline parse, no clipping) + retry→quarantine (C1(4))
+- [x] `metrics/sampling.py` — stratified judge coverage; defaults 100% on fixtures (C1(5))
+- [x] `monitoring/production_proxies.py` — ground-truth-free subset (requires_ground_truth flag)
+- [x] Test: coverage 100% → verdict identical to pre-sampling (C1(5))
 
 ## Phase 9 — Docs & deliverables
 - [ ] `README.md` — how to run + the *why* behind the structure
